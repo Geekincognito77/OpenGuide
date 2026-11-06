@@ -6,8 +6,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.openguide.tv.data.CATEGORY_ALL
 import com.openguide.tv.data.CATEGORY_CRT
 import com.openguide.tv.data.CATEGORY_FAVORITES
+import com.openguide.tv.data.CrtStretch
 import com.openguide.tv.data.LANGUAGE_ALL
 import com.openguide.tv.data.Repo
+import com.openguide.tv.data.matchesLanguage
 import com.openguide.tv.ui.MainActivity
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -32,8 +34,10 @@ class ChannelListsTest {
 
     private fun setLanguage(code: String) {
         repo.setLanguage(code)
-        waitFor("language $code", 10_000) { repo.prefs.language == code && repo.lineup.value.isNotEmpty() }
-        SystemClock.sleep(500) // the lineup is rebuilt just after the preference changes
+        // The lineup is rebuilt just after the preference changes.
+        waitFor("language $code", 10_000) {
+            repo.lineup.value.isNotEmpty() && repo.lineup.value.all { matchesLanguage(it.languages, code) }
+        }
     }
 
     @Before fun launch() {
@@ -67,7 +71,7 @@ class ChannelListsTest {
         }
 
         setLanguage(LANGUAGE_ALL)
-        assertTrue(repo.filtered(CATEGORY_ALL).size > english.size)
+        waitFor("every language", 10_000) { repo.filtered(CATEGORY_ALL).size > english.size }
         setLanguage("eng")
     }
 
@@ -127,5 +131,26 @@ class ChannelListsTest {
         assertFalse(repo.toggleCrt(pick[0].id))
         assertEquals(pick.drop(1), repo.filtered(CATEGORY_CRT))
         pick.drop(1).forEach { repo.toggleCrt(it.id) }
+    }
+
+    @Test fun pictureAndSubtitlesAreSavedForEachChannel() {
+        val (a, b) = repo.filtered(CATEGORY_ALL).take(2).map { it.id }
+        val prefs = repo.prefs
+        val fallback = prefs.crtStretch
+        assertEquals("Uses the default until set", fallback, prefs.channelStretch(a))
+
+        val other = CrtStretch.entries.first { it != fallback }
+        prefs.setChannelStretch(a, other)
+        prefs.setChannelCrop(a, 2, 12)
+        prefs.setSubtitles(a, true)
+
+        assertEquals(other, prefs.channelStretch(a))
+        assertEquals(2 to 12, prefs.channelCrop(a))
+        assertTrue(prefs.subtitles(a))
+
+        assertEquals("Others are unaffected", fallback, prefs.channelStretch(b))
+        assertEquals(0 to 0, prefs.channelCrop(b))
+        assertFalse(prefs.subtitles(b))
+        prefs.setSubtitles(a, false)
     }
 }

@@ -157,6 +157,19 @@ class GuideView(
         notifyFocus()
     }
 
+    private val tunedRow get() = channels.indexOfFirst { it.id == tunedChannelId }
+
+    /** On the channel being watched, at the current time. A channel not in this list can't count against it. */
+    fun isHome(): Boolean = isAtNow() && (tunedRow < 0 || tunedRow == row)
+
+    fun goHome() {
+        tunedRow.takeIf { it >= 0 }?.let {
+            row = it
+            clampScroll()
+        }
+        jumpToNow()
+    }
+
     fun refreshFocus() {
         invalidate()
         notifyFocus()

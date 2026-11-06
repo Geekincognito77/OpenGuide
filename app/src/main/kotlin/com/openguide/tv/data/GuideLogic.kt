@@ -86,6 +86,16 @@ fun croppedAspect(videoAspect: Float, cropX: Int, cropY: Int): Float =
 fun uncroppedSize(w: Int, h: Int, cropX: Int, cropY: Int): Pair<Int, Int> =
     (w * 100f / (100 - 2 * cropX) + 0.5f).toInt() to (h * 100f / (100 - 2 * cropY) + 0.5f).toInt()
 
+/** Reads a saved "x,y" crop. Anything unreadable means no crop. */
+fun parseCrop(saved: String?): Pair<Int, Int> {
+    val parts = saved?.split(',') ?: return 0 to 0
+    val x = parts.getOrNull(0)?.toIntOrNull() ?: return 0 to 0
+    val y = parts.getOrNull(1)?.toIntOrNull() ?: return 0 to 0
+    return x.coerceIn(0, MAX_CROP) to y.coerceIn(0, MAX_CROP)
+}
+
+const val MAX_CROP = 25
+
 /** Compares dotted versions numerically, so 1.10 is newer than 1.9. A leading "v" is ignored. */
 fun isNewerVersion(remote: String, current: String): Boolean {
     fun parts(v: String) = v.trim().removePrefix("v").split('.').map { it.toIntOrNull() ?: 0 }

@@ -161,4 +161,28 @@ class RemoteHoldTest {
         press(KeyEvent.KEYCODE_CHANNEL_UP)
         assertEquals(first, onMain { g.currentChannel?.id })
     }
+
+    @Test fun backReturnsToTheChannelBeingWatched() {
+        val g = onMain { guide() }
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        press(KeyEvent.KEYCODE_DPAD_DOWN)
+        press(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) // watch this one in the small window
+        val watching = onMain { g.currentChannel?.id }
+        assertEquals(watching, onMain { g.tunedChannelId })
+        assertTrue(onMain { g.isHome() })
+
+        repeat(8) { press(KeyEvent.KEYCODE_DPAD_DOWN) }
+        press(KeyEvent.KEYCODE_DPAD_RIGHT)
+        assertTrue(onMain { g.currentChannel?.id } != watching)
+        assertFalse(onMain { g.isHome() })
+
+        press(KeyEvent.KEYCODE_BACK)
+        assertEquals(watching, onMain { g.currentChannel?.id })
+        assertTrue(onMain { g.isHome() })
+        assertTrue("Back only moves the guide the first time", onMain { focus() } is GuideView)
+
+        // Once home, Back goes on to the tabs as it always did.
+        press(KeyEvent.KEYCODE_BACK)
+        assertEquals("Guide", onMain { (focus() as? TextView)?.text?.toString() })
+    }
 }

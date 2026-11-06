@@ -25,9 +25,11 @@ import androidx.annotation.OptIn
 import androidx.core.content.FileProvider
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.openguide.tv.OpenGuideApp
 import com.openguide.tv.data.Block
 import com.openguide.tv.data.CATEGORY_ALL
@@ -36,6 +38,7 @@ import com.openguide.tv.data.CATEGORY_FAVORITES
 import com.openguide.tv.data.Channel
 import com.openguide.tv.data.CrtStretch
 import com.openguide.tv.data.LANGUAGE_ALL
+import com.openguide.tv.data.MAX_CROP
 import com.openguide.tv.data.Listings
 import com.openguide.tv.data.Programme
 import com.openguide.tv.data.REGION_WORLD
@@ -84,6 +87,8 @@ class MainActivity : Activity() {
     private lateinit var calibrator: OverscanOverlay
     private lateinit var cropper: CropOverlay
     private lateinit var pipFrame: View
+    private lateinit var crtNumber: TextView
+    private lateinit var subtitles: SubtitleView
     private lateinit var hero: LinearLayout
     private lateinit var guide: GuideView
     private lateinit var guideScreen: LinearLayout
@@ -132,7 +137,10 @@ class MainActivity : Activity() {
     /** An update waiting for permission to install apps, which is granted on another screen. */
     private var pendingApk: File? = null
 
-    private val hideBanner = Runnable { banner.visibility = View.GONE }
+    private val hideBanner = Runnable {
+        banner.visibility = View.GONE
+        crtNumber.visibility = View.GONE
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -154,7 +162,10 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
         guide = GuideView(this, repo, logos, listings).apply {
-            onFocusChanged = ::updateHero
+            onFocusChanged = { ch, block ->
+                updateHero(ch, block)
+                updateStatusText()
+            }
             onSelect = { ch, _ -> tuneFullscreen(ch, repo.filtered(guideCategory)) }
             onPreview = { ch ->
                 surfList = repo.filtered(guideCategory)
@@ -199,8 +210,23 @@ class MainActivity : Activity() {
         }
         root.addView(videoStatus, FrameLayout.LayoutParams(0, 0))
 
+        // Separate from the video view, which can be larger than the screen when cropping.
+        video.subtitleView?.visibility = View.GONE
+        subtitles = SubtitleView(this).apply {
+            setFractionalTextSize(if (Look.crt) 0.07f else SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
+            visibility = View.GONE
+        }
+        root.addView(subtitles, FrameLayout.LayoutParams(MATCH, MATCH))
+
         banner = buildBanner()
         root.addView(banner, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
+
+        // All CRT mode shows while watching: the number in the corner, like an old TV.
+        crtNumber = label("", 34f, Color.parseColor("#6CFF6C"), bold = true).apply {
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            visibility = View.GONE
+        }
+        root.addView(crtNumber, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
 
         loadingView = buildLoading()
         root.addView(loadingView, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -233,12 +259,6 @@ class MainActivity : Activity() {
         override fun calibrateOverscan() {
             calibrator.show(prefs.crtOverscanX, prefs.crtOverscanY)
         }
-        override fun adjustCrop() {
-            // Video doesn't play on the settings screen, and this has to be judged against a picture.
-            resumeIfStopped()
-            show(Screen.FULLSCREEN)
-            cropper.show(prefs.crtCropX, prefs.crtCropY)
-        }
         override fun checkForUpdate() = this@MainActivity.checkForUpdate()
     }
 
@@ -268,7 +288,8 @@ class MainActivity : Activity() {
 
     /** Keeps everything but full-screen video inside the part of the picture the tube shows. */
     private fun applyOverscan() {
-        listOf<View>(shell, banner, loadingView, picker, cropper).forEach { v ->
+        // Not the picker: it's centred anyway, and its dimming should reach the screen's edges.
+        listOf<View>(shell, banner, loadingView, cropper, crtNumber, subtitles).forEach { v ->
             v.layoutParams = (v.layoutParams as FrameLayout.LayoutParams).apply {
                 setMargins(insetX, insetY, insetX, insetY)
             }
@@ -325,12 +346,13 @@ class MainActivity : Activity() {
         }
         // What this frame's shape becomes on the tube, once a squeezing converter has had its way.
         val squeeze = if (prefs.crtSqueezed) (4f / 3f) / (frameW.toFloat() / frameH) else 1f
+        val id = player?.channel?.id
         // A small window can't clip its video, so it never crops.
-        val stretch = prefs.crtStretch.let { if (it == CrtStretch.FILL && screen != Screen.FULLSCREEN) CrtStretch.FIT else it }
+        val stretch = (id?.let(prefs::channelStretch) ?: prefs.crtStretch)
+            .let { if (it == CrtStretch.FILL && screen != Screen.FULLSCREEN) CrtStretch.FIT else it }
         // Cropping is full screen only: a small window can't clip what would overflow it.
         val full = screen == Screen.FULLSCREEN
-        val cropX = if (full) prefs.crtCropX else 0
-        val cropY = if (full) prefs.crtCropY else 0
+        val (cropX, cropY) = if (full && id != null) prefs.channelCrop(id) else 0 to 0
         val fitted = crtVideoSize(fw, fh, fw.toFloat() / fh * squeeze, croppedAspect(aspect, cropX, cropY), stretch)
         val (w, h) = uncroppedSize(fitted.first, fitted.second, cropX, cropY)
         video.layoutParams = FrameLayout.LayoutParams(w, h, Gravity.TOP or Gravity.START).apply {
@@ -505,7 +527,11 @@ class MainActivity : Activity() {
     }
 
     private fun updateStatusText() {
-        status.text = repo.epgStatus.value ?: if (screen == Screen.SETTINGS) "" else "Hold OK for options"
+        status.text = repo.epgStatus.value ?: when {
+            screen == Screen.SETTINGS -> ""
+            screen == Screen.GUIDE && !guide.isHome() -> "Back: your channel"
+            else -> "Hold OK for options"
+        }
     }
 
     private fun tick() {
@@ -621,8 +647,9 @@ class MainActivity : Activity() {
         updateStatusText()
         if (target != Screen.FULLSCREEN) {
             banner.removeCallbacks(hideBanner)
-            banner.visibility = View.GONE
+            hideBanner.run()
         }
+        subtitles.visibility = if (target == Screen.FULLSCREEN) View.VISIBLE else View.GONE
         placeVideo()
     }
 
@@ -816,6 +843,10 @@ class MainActivity : Activity() {
             override fun onVideoSizeChanged(videoSize: VideoSize) {
                 if (Look.crt) placeVideo()
             }
+
+            override fun onCues(cueGroup: CueGroup) {
+                subtitles.setCues(cueGroup.cues)
+            }
         })
     }
 
@@ -823,8 +854,12 @@ class MainActivity : Activity() {
         val p = ensurePlayer()
         val cur = p.channel
         if (cur != null && cur != ch) previousChannel = cur
+        subtitles.setCues(emptyList())
         p.tune(ch, stream)
         guide.tunedChannelId = ch.id
+        updateStatusText()
+        // Each channel has its own picture settings.
+        if (Look.crt) placeVideo()
     }
 
     private fun tuneFullscreen(ch: Channel, list: List<Channel>) {
@@ -863,11 +898,17 @@ class MainActivity : Activity() {
     private fun showBanner(persist: Boolean = false) {
         val ch = player?.channel ?: return
         banner.removeCallbacks(hideBanner)
+        if (Look.crt) {
+            val failed = player?.state is TuneState.Failed
+            crtNumber.text = (repo.numbers[ch.id]?.toString() ?: "--") + if (failed) "  NO SIGNAL" else ""
+            crtNumber.visibility = View.VISIBLE
+            if (!persist) banner.postDelayed(hideBanner, 4000)
+            return
+        }
         banner.visibility = View.VISIBLE
         bannerChannel.text = "${repo.numbers[ch.id] ?: ""}  ${ch.name}" + if (ch.id in repo.favorites.value) "  ★" else ""
         val channelKeys = if (prefs.dpadChangesChannel) "Up/Down" else "Channel +/-"
-        bannerHint.text = if (Look.crt) "$channelKeys: channel  Left: last  Right: options"
-        else "$channelKeys: change channel   ·   Left: last channel   ·   Right or hold OK: options   ·   Back: guide"
+        bannerHint.text = "$channelKeys: change channel   ·   Left: last channel   ·   Right or hold OK: options   ·   Back: guide"
         bannerLogo.tag = ch.id
         bannerLogo.setImageBitmap(logos.get(ch.logo) {
             if (bannerLogo.tag == ch.id) bannerLogo.setImageBitmap(logos.get(ch.logo) {})
@@ -974,22 +1015,48 @@ class MainActivity : Activity() {
         val items = buildList {
             add(PickerItem("fav", if (isFav) "Remove from favorites" else "Add to favorites"))
             add(PickerItem("crt", crtListLabel(ch)))
-            if (Look.crt) add(PickerItem("crop", "Crop black bars"))
+            add(PickerItem("subs", "Subtitles: " + if (prefs.subtitles(ch.id)) "On" else "Off"))
+            if (Look.crt) {
+                add(PickerItem("picture", "Picture: " + prefs.channelStretch(ch.id).label))
+                add(PickerItem("crop", "Crop black bars"))
+            }
             if (previous != null) add(PickerItem("prev", "Last channel: ${previous.name}"))
             ch.streams.forEachIndexed { i, s -> add(PickerItem("src$i", "Source ${i + 1}: ${s.label}")) }
         }
         val playing = (player?.state as? TuneState.Playing)?.stream
         val current = playing?.let { "src${ch.streams.indexOf(it)}" }
-        picker.show(ch.name, items, current) { item ->
+        picker.show(ch.name, items, current, focus = items.first().id) { item ->
             when (item.id) {
                 "fav" -> toggleFavorite(ch)
                 "crt" -> toggleCrtList(ch)
-                "crop" -> cropper.show(prefs.crtCropX, prefs.crtCropY)
+                "subs" -> toggleSubtitles(ch)
+                "picture" -> pickPicture(ch)
+                "crop" -> prefs.channelCrop(ch.id).let { (x, y) -> cropper.show(x, y) }
                 "prev" -> goToPreviousChannel()
                 current -> {} // already playing this source, so don't restart it
                 else -> tune(ch, ch.streams[item.id.removePrefix("src").toInt()])
             }
         }
+    }
+
+    private fun pickPicture(ch: Channel) {
+        val items = CrtStretch.entries.map { PickerItem(it.name, it.label) }
+        picker.show("Picture for ${ch.name}", items, prefs.channelStretch(ch.id).name) {
+            prefs.setChannelStretch(ch.id, CrtStretch.valueOf(it.id))
+            placeVideo()
+        }
+    }
+
+    private fun toggleSubtitles(ch: Channel) {
+        val p = player ?: return
+        val on = !prefs.subtitles(ch.id)
+        p.setSubtitles(on)
+        val text = when {
+            !on -> "Subtitles off for ${ch.name}"
+            p.hasSubtitles -> "Subtitles on for ${ch.name}"
+            else -> "Subtitles on, but this stream isn't offering any"
+        }
+        Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
     }
 
     // ---- Remote ----
@@ -1029,8 +1096,8 @@ class MainActivity : Activity() {
 
     private fun handleCropKey(event: KeyEvent) {
         if (event.action != KeyEvent.ACTION_DOWN) return
-        var x = prefs.crtCropX
-        var y = prefs.crtCropY
+        val id = player?.channel?.id
+        var (x, y) = id?.let(prefs::channelCrop) ?: (0 to 0)
         when (event.keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> x--
             KeyEvent.KEYCODE_DPAD_RIGHT -> x++
@@ -1044,9 +1111,10 @@ class MainActivity : Activity() {
             }
             else -> return
         }
-        prefs.crtCropX = x.coerceIn(0, MAX_CROP)
-        prefs.crtCropY = y.coerceIn(0, MAX_CROP)
-        cropper.update(prefs.crtCropX, prefs.crtCropY)
+        x = x.coerceIn(0, MAX_CROP)
+        y = y.coerceIn(0, MAX_CROP)
+        if (id != null) prefs.setChannelCrop(id, x, y)
+        cropper.update(x, y)
         placeVideo()
     }
 
@@ -1095,7 +1163,7 @@ class MainActivity : Activity() {
                 }
                 event.action == KeyEvent.ACTION_UP && okArmed -> {
                     okArmed = false
-                    if (banner.visibility == View.VISIBLE) hideBanner.run() else showBanner()
+                    if (banner.visibility == View.VISIBLE || crtNumber.visibility == View.VISIBLE) hideBanner.run() else showBanner()
                 }
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> if (first) goToPreviousChannel()
@@ -1119,7 +1187,7 @@ class MainActivity : Activity() {
         when {
             screen == Screen.LOADING -> finish()
             screen != Screen.GUIDE -> showGuide(focus = true)
-            guide.hasFocus() && !guide.isAtNow() -> guide.jumpToNow()
+            guide.hasFocus() && !guide.isHome() -> guide.goHome()
             guide.hasFocus() -> {
                 tabGuide.requestFocus()
                 confirmExit()
@@ -1174,6 +1242,5 @@ class MainActivity : Activity() {
     private companion object {
         const val KEY_SETTINGS = "settings"
         const val MAX_OVERSCAN = 20
-        const val MAX_CROP = 25
     }
 }

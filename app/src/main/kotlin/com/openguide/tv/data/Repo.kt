@@ -81,16 +81,19 @@ class Prefs(ctx: Context) {
     var crtOverscanY: Int
         get() = p.getInt("crt_overscan_y", 5)
         set(v) = p.edit().putInt("crt_overscan_y", v).apply()
-    /** Percent cut from each side of the video, for streams with black bars baked into the picture. */
-    var crtCropX: Int
-        get() = p.getInt("crt_crop_x", 0)
-        set(v) = p.edit().putInt("crt_crop_x", v).apply()
-    var crtCropY: Int
-        get() = p.getInt("crt_crop_y", 0)
-        set(v) = p.edit().putInt("crt_crop_y", v).apply()
     var crtOverscanVideo: Boolean
         get() = p.getBoolean("crt_overscan_video", false)
         set(v) = p.edit().putBoolean("crt_overscan_video", v).apply()
+
+    /** A channel uses the default picture mode until it's given its own. */
+    fun channelStretch(channel: String): CrtStretch =
+        CrtStretch.entries.firstOrNull { it.name == p.getString("picture_$channel", null) } ?: crtStretch
+    fun setChannelStretch(channel: String, v: CrtStretch) = p.edit().putString("picture_$channel", v.name).apply()
+    /** Percent cut from the sides and from top and bottom, since black bars vary from stream to stream. */
+    fun channelCrop(channel: String): Pair<Int, Int> = parseCrop(p.getString("crop_$channel", null))
+    fun setChannelCrop(channel: String, x: Int, y: Int) = p.edit().putString("crop_$channel", "$x,$y").apply()
+    fun subtitles(channel: String): Boolean = p.getBoolean("subtitles_$channel", false)
+    fun setSubtitles(channel: String, on: Boolean) = p.edit().putBoolean("subtitles_$channel", on).apply()
 
     fun goodStream(channel: String): String? = p.getString("good_$channel", null)
     fun setGoodStream(channel: String, url: String) = p.edit().putString("good_$channel", url).apply()
@@ -220,6 +223,8 @@ class Repo(ctx: Context) {
         return if (c.channels.any { it.country == code }) code else "US"
     }
 
+    /** One at a time, or a rebuild that started before a language change could finish after it and undo it. */
+    @Synchronized
     private fun rebuildLineup() {
         val c = _catalog.value ?: return
         val lang = language

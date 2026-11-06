@@ -132,13 +132,14 @@ class PickerOverlay(ctx: Context) : FrameLayout(ctx) {
 
     val isShowing get() = visibility == VISIBLE
 
-    fun show(heading: String, items: List<PickerItem>, selected: String?, onPick: (PickerItem) -> Unit) {
+    /** @param focus the row to start on, when that shouldn't be the one that's ticked. */
+    fun show(heading: String, items: List<PickerItem>, selected: String?, focus: String? = selected, onPick: (PickerItem) -> Unit) {
         title.text = heading
         pickListener = onPick
         returnFocus = rootView.findFocus()
         // Fits short lists; long ones (like regions) scroll inside the maximum height.
         panel.layoutParams = panel.layoutParams.apply { height = minOf(context.dp(420), context.dp(72 + 38 * items.size)) }
-        val start = items.indexOfFirst { it.id == selected }.coerceAtLeast(0)
+        val start = items.indexOfFirst { it.id == focus }.coerceAtLeast(0)
         list.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun getItemCount() = items.size
             override fun onCreateViewHolder(p: ViewGroup, t: Int) = object : RecyclerView.ViewHolder(
@@ -423,7 +424,7 @@ class CropOverlay(ctx: Context) : FrameLayout(ctx) {
     }
 
     fun update(x: Int, y: Int) {
-        text.text = "Crop black bars: top and bottom $y%, sides $x%\n" +
+        text.text = "Crop for this channel: top and bottom $y%, sides $x%\n" +
             "Up/Down: top and bottom   Left/Right: sides\nOK or Back: done"
     }
 }
@@ -436,7 +437,6 @@ interface SettingsActions {
     fun crtLookChanged()
     fun crtPictureChanged()
     fun calibrateOverscan()
-    fun adjustCrop()
     fun checkForUpdate()
 }
 
@@ -482,22 +482,21 @@ class SettingsScreen(
         actions.crtLookChanged()
     }
     private val crtOverscan = row { actions.calibrateOverscan() }
-    private val crtCrop = row { actions.adjustCrop() }
     private val crtOverscanVideo = row {
         prefs.crtOverscanVideo = !prefs.crtOverscanVideo
         refresh()
         actions.crtPictureChanged()
     }
-    private val crtRows = listOf(crtStretch, crtCrop, crtSignal, crtOverscan, crtOverscanVideo)
+    private val crtRows = listOf(crtStretch, crtSignal, crtOverscan, crtOverscanVideo)
 
     private val stats = ctx.label(size = 13.5f, color = Palette.MUTED, lines = 8)
     private val credits = ctx.label(
         "Channels and streams come from the iptv-org project. Listings come from i.mjh.nz, EPGShare and EPG.PW. " +
             "OpenGuide hosts no video and only links to publicly listed streams; some may be offline or blocked in your area.\n\n" +
             "In the guide: OK watches, and holding OK opens options (preview, favorite, CRT list). Hold Up or Down to scroll faster. " +
-            "Channel Up and Down page through the guide. Back returns to the current time, then to the tabs.\n" +
+            "Channel Up and Down page through the guide. Back returns to your channel and the current time, then to the tabs.\n" +
             "While watching: Channel Up and Down change channel, OK shows info, Left returns to the last channel, " +
-            "Right or holding OK opens options.\n" +
+            "Right or holding OK opens options: subtitles and, in CRT mode, picture and crop, all saved for each channel.\n" +
             "Remotes with Menu, Play/Pause, Rewind or Fast Forward buttons can use those as shortcuts.",
         size = 12.5f, color = Palette.FAINT, lines = 14,
     )
@@ -506,7 +505,7 @@ class SettingsScreen(
         orientation = VERTICAL
         val col = LinearLayout(ctx).apply { orientation = VERTICAL }
         val width = if (Look.crt) MATCH else ctx.dp(620)
-        listOf(region, language, onlyListed, hideDead, dpadSurf, crtMode, crtStretch, crtCrop, crtSignal, crtOverscan, crtOverscanVideo, refreshNow, update).forEach {
+        listOf(region, language, onlyListed, hideDead, dpadSurf, crtMode, crtStretch, crtSignal, crtOverscan, crtOverscanVideo, refreshNow, update).forEach {
             col.addView(it, LayoutParams(width, ctx.dp(40)).apply { bottomMargin = ctx.dp(4) })
         }
         col.addView(stats, LayoutParams(MATCH, WRAP).apply { topMargin = ctx.dp(14); bottomMargin = ctx.dp(14) })
@@ -528,8 +527,7 @@ class SettingsScreen(
         hideDead.text = "Hide channels with no working source: " + onOff(prefs.hideDead)
         dpadSurf.text = "D-pad Up/Down change channel: " + onOff(prefs.dpadChangesChannel)
         crtMode.text = "CRT TV mode: " + onOff(prefs.crtMode)
-        crtStretch.text = "Picture: " + prefs.crtStretch.label
-        crtCrop.text = "Crop black bars (${prefs.crtCropY}% top and bottom, ${prefs.crtCropX}% sides)"
+        crtStretch.text = "Default picture: " + prefs.crtStretch.label
         crtSignal.text = "Signal: " + if (prefs.crtSqueezed) "Squeezed to 4:3 (most adapters)" else "Shape kept"
         crtOverscan.text = "Adjust overscan (${prefs.crtOverscanX}% wide, ${prefs.crtOverscanY}% high)"
         crtOverscanVideo.text = "Keep video inside overscan: " + onOff(prefs.crtOverscanVideo)

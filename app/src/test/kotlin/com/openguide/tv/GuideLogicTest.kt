@@ -185,4 +185,12 @@ class GuideLogicTest {
         assertEquals(16f / 9f, croppedAspect(16f / 9f, 0, 0), 0.0001f)
         assertEquals(1920 to 1080, uncroppedSize(1920, 1080, 0, 0))
     }
+
+    @Test fun savedCropIsReadSafely() {
+        assertEquals(3 to 12, parseCrop("3,12"))
+        assertEquals(0 to 0, parseCrop(null))
+        assertEquals(0 to 0, parseCrop("junk"))
+        assertEquals(0 to 0, parseCrop("3"))
+        assertEquals(MAX_CROP to 0, parseCrop("99,-4"))
+    }
 }

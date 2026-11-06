@@ -12,6 +12,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -23,6 +25,7 @@ import com.openguide.tv.data.Repo
 import com.openguide.tv.data.StreamInfo
 import com.openguide.tv.data.orderStreams
 import okhttp3.OkHttpClient
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 sealed class TuneState {
@@ -68,6 +71,8 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
     private var lastFrames = -1
     private var lastPosition = -1L
     private var lastProgressAt = 0L
+    private var subtitlesOn = false
+    private var triedSubtitleTrack = false
     /** Hangs fail in seconds, so ExoPlayer's own retries happen before the watchdog steps in. */
     private val streamHttp: OkHttpClient = repo.http.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -143,6 +148,8 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
                 }
             }
 
+            override fun onTracksChanged(tracks: Tracks) = chooseSubtitleTrack(tracks)
+
             override fun onPlayerError(error: PlaybackException) {
                 Log.i(TAG, "Stream error on ${channel?.id}: ${error.errorCodeName}")
                 if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
@@ -154,6 +161,49 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
             }
         })
         handler.postDelayed(freezeCheck, FREEZE_POLL)
+    }
+
+    /** Whether the current stream offers any subtitles. Only known once it has started. */
+    val hasSubtitles: Boolean
+        get() = exo.currentTracks.groups.any { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
+
+    /** Saves the choice for this channel and applies it. */
+    fun setSubtitles(on: Boolean) {
+        val ch = channel ?: return
+        repo.prefs.setSubtitles(ch.id, on)
+        applySubtitles()
+        chooseSubtitleTrack(exo.currentTracks)
+    }
+
+    private fun applySubtitles() {
+        subtitlesOn = channel?.let { repo.prefs.subtitles(it.id) } ?: false
+        triedSubtitleTrack = false
+        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesOn)
+            .setPreferredTextLanguage(Locale.getDefault().language)
+            .build()
+    }
+
+    /**
+     * The player only picks subtitles on its own if their language is the device's, and many streams
+     * label theirs vaguely or not at all, so when none got picked this takes what there is.
+     */
+    private fun chooseSubtitleTrack(tracks: Tracks) {
+        if (!subtitlesOn || triedSubtitleTrack) return
+        val text = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.isSupported }
+        if (text.isEmpty() || text.any { it.isSelected }) return
+        triedSubtitleTrack = true
+        // A named track is real subtitles; an unnamed one may be built-in captions that are often empty.
+        val own = Locale.getDefault().language
+        val group = text.firstOrNull { it.getTrackFormat(0).language?.startsWith(own) == true }
+            ?: text.firstOrNull { it.getTrackFormat(0).label != null }
+            ?: text.first()
+        val track = (0 until group.length).first { group.isTrackSupported(it) }
+        Log.i(TAG, "Subtitles on ${channel?.id}: choosing ${group.getTrackFormat(track).label}")
+        exo.trackSelectionParameters = exo.trackSelectionParameters.buildUpon()
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track))
+            .build()
     }
 
     private fun restartOrNext() {
@@ -209,6 +259,7 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
     private fun play(s: StreamInfo) {
         startedAt = SystemClock.uptimeMillis()
         lastProgressAt = startedAt
+        applySubtitles()
         val http = OkHttpDataSource.Factory(streamHttp)
         s.userAgent?.let { http.setUserAgent(it) }
         s.referrer?.let { http.setDefaultRequestProperties(mapOf("Referer" to it, "Origin" to originOf(it))) }

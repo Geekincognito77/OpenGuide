@@ -50,12 +50,12 @@ remote has no channel buttons, turn on **Settings > D-pad Up/Down change channel
 | Guide | Channel Up / Down | Page through the guide |
 | Guide | OK | Watch full screen |
 | Guide | Hold OK | Options: watch, preview in the small window, favorite, CRT list |
-| Guide | Back | Return to the current time, then to the tabs; press again to exit |
+| Guide | Back | Return to the channel you're watching and the current time, then to the tabs; press again to exit |
 | Channels | OK / Hold OK | Watch / options |
 | Watching | Channel Up / Down | Change channel |
 | Watching | D-pad Up / Down, or OK | Show programme info |
 | Watching | Left | Return to the last channel |
-| Watching | Right or hold OK | Options: favorite, CRT list, crop black bars, last channel, stream source |
+| Watching | Right or hold OK | Options: favorite, CRT list, subtitles, picture, crop, last channel, stream source |
 | Watching | Back | Return to the guide |
 
 Remotes that have them can also use these shortcuts:
@@ -73,18 +73,29 @@ Remotes that have them can also use these shortcuts:
 Turn on **Settings > CRT TV mode** for an old-style guide with larger text, flat colours and fewer
 half hours on screen. Its settings appear below that row:
 
-- **Picture** sets how video fits: Fit keeps its shape with black bars, Fill crops the edges, and
-  Stretch fills the screen.
-- **Crop black bars** cuts bars baked into a stream. Adjust it over the video, from here or from the
-  options while watching. It's one setting for all channels and works best with Fill or Stretch,
-  because Fit keeps the bars the picture needs to hold its shape.
+- **Default picture** sets how video fits on channels you haven't set yourself: Fit keeps its shape
+  with black bars, Fill crops the edges, and Stretch fills the screen.
 - **Signal** says what your adapter does. Most HDMI-to-composite adapters squeeze the whole picture
   to 4:3, and the app corrects text and video shape for that. Choose Shape kept if yours doesn't.
 - **Adjust overscan** moves everything inside the part of the picture your TV shows. Video still runs
   to the edges, as broadcasts do, unless you turn on **Keep video inside overscan**.
 
+While watching, press Right for two more options, each saved for that channel:
+
+- **Picture** overrides the default fit.
+- **Crop black bars** cuts bars baked into a stream, adjusted live over the video. It works best with
+  Fill or Stretch, because Fit keeps the bars the picture needs to hold its shape.
+
+Instead of the information banner, CRT mode shows just the channel number in the top left corner when
+you change channel, or "NO SIGNAL" beside it if the channel isn't responding.
+
 **CRT list** is your own channel list, like Favorites. Hold OK on a channel to add it. In CRT mode the
 guide starts on it once it has channels, and you can switch lists from the guide's menu at the top.
+
+## Subtitles
+
+Press Right while watching to turn subtitles on or off. The choice is saved for each channel. Not every
+stream offers them, and the app tells you when one doesn't.
 
 ## Where the listings come from
 
