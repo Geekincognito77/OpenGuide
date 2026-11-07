@@ -96,6 +96,14 @@ fun parseCrop(saved: String?): Pair<Int, Int> {
 
 const val MAX_CROP = 25
 
+private val BREAK_FILLER = Regex("""ptv[-_]?\d*[-_]?ad[-_]?bumper""", RegexOption.IGNORE_CASE)
+
+/**
+ * Whether a segment is the logo clip Pluto repeats through an ad break it has no ads for. It's in the
+ * stream like any other video, so only its name tells it apart, as in "ptv_7424_ad_bumper_animation_dots".
+ */
+fun isBreakFiller(segmentUrl: String): Boolean = BREAK_FILLER.containsMatchIn(segmentUrl)
+
 /** Compares dotted versions numerically, so 1.10 is newer than 1.9. A leading "v" is ignored. */
 fun isNewerVersion(remote: String, current: String): Boolean {
     fun parts(v: String) = v.trim().removePrefix("v").split('.').map { it.toIntOrNull() ?: 0 }

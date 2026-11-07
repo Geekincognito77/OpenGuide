@@ -88,6 +88,7 @@ class MainActivity : Activity() {
     private lateinit var cropper: CropOverlay
     private lateinit var pipFrame: View
     private lateinit var crtNumber: TextView
+    private lateinit var breakLabel: TextView
     private lateinit var subtitles: SubtitleView
     private lateinit var hero: LinearLayout
     private lateinit var guide: GuideView
@@ -228,6 +229,19 @@ class MainActivity : Activity() {
         }
         root.addView(crtNumber, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
 
+        // Says a long logo screen is Pluto's ad break, so it doesn't look like a stuck channel.
+        breakLabel = label(
+            "Pluto ad break · show will resume",
+            if (Look.crt) 18f else 14f,
+            if (Look.crt) Color.parseColor("#6CFF6C") else Palette.TEXT,
+            bold = Look.crt,
+        ).apply {
+            background = roundRect(if (Look.crt) Color.BLACK else Palette.PANEL, dpf(6f))
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            visibility = View.GONE
+        }
+        root.addView(breakLabel, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END))
+
         loadingView = buildLoading()
         root.addView(loadingView, FrameLayout.LayoutParams(MATCH, MATCH))
 
@@ -289,7 +303,7 @@ class MainActivity : Activity() {
     /** Keeps everything but full-screen video inside the part of the picture the tube shows. */
     private fun applyOverscan() {
         // Not the picker: it's centred anyway, and its dimming should reach the screen's edges.
-        listOf<View>(shell, banner, loadingView, cropper, crtNumber, subtitles).forEach { v ->
+        listOf<View>(shell, banner, loadingView, cropper, crtNumber, breakLabel, subtitles).forEach { v ->
             v.layoutParams = (v.layoutParams as FrameLayout.LayoutParams).apply {
                 setMargins(insetX, insetY, insetX, insetY)
             }
@@ -650,6 +664,7 @@ class MainActivity : Activity() {
             hideBanner.run()
         }
         subtitles.visibility = if (target == Screen.FULLSCREEN) View.VISIBLE else View.GONE
+        updateBreakLabel()
         placeVideo()
     }
 
@@ -836,7 +851,7 @@ class MainActivity : Activity() {
 
     // ---- Playback ----
 
-    private fun ensurePlayer(): TvPlayer = player ?: TvPlayer(this, repo, ::onTuneState).also {
+    private fun ensurePlayer(): TvPlayer = player ?: TvPlayer(this, repo, ::onTuneState, ::updateBreakLabel).also {
         player = it
         video.player = it.exo
         it.exo.addListener(object : Player.Listener {
@@ -877,6 +892,10 @@ class MainActivity : Activity() {
             if (s is TuneState.Connecting || s is TuneState.Failed) showBanner(persist = s is TuneState.Failed)
         }
         if (s is TuneState.Failed) guide.refreshFocus()
+    }
+
+    private fun updateBreakLabel() {
+        breakLabel.visibility = if (screen == Screen.FULLSCREEN && player?.onBreak == true) View.VISIBLE else View.GONE
     }
 
     private fun applyVideoStatus() {

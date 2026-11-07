@@ -161,6 +161,17 @@ class GuideLogicTest {
         assertEquals(1440 to 1080, crtVideoSize(1920, 1080, 16f / 9f, 4f / 3f, CrtStretch.FIT))
     }
 
+    @Test fun recognisesPlutosBreakFillerByName() {
+        // Real segment paths, including the different ways Pluto spells it.
+        assertTrue(isBreakFiller("https://x.plutotv.net/410_Pluto_TV_OandO/clip/58e5377d_ptv_7424_ad_bumper_animation_dots_normal_10_1/1080pDRM/hls/hls_2400-00000.ts"))
+        assertTrue(isBreakFiller("https://x.plutotv.net/701_pluto_tv_oando/clip/58e5397b_ptv-7424_ad_bumper_animation_dots_normal_30_1/1080pDRM/seg_1.ts"))
+        assertTrue(isBreakFiller("https://x.plutotv.net/443_pluto_tv_oando/clip/58e5371a_ptv-7424adbumperanimationdotsinverted30_30fps/1080pDRM/seg_1.ts"))
+        assertFalse(isBreakFiller("https://x.plutotv.net/316_pluto/clip/61163aa1_walkertexasranger_141/720pDRM/hls/hls_600-00033.ts"))
+        assertFalse(isBreakFiller("https://x.plutotv.net/v1/mp4/c(ts)/p(0_ad%2Fcreative%2F67eeff33_ad%2F720p%2Fvideo_600.mp4)/1.ts"))
+        // A show that merely has the word in its title.
+        assertFalse(isBreakFiller("https://x.plutotv.net/1_pluto/clip/abc_Road_Bumper_Cars_S1E2/720p/hls/hls_600-00001.ts"))
+    }
+
     @Test fun versionsCompareNumerically() {
         assertTrue(isNewerVersion("v1.2.0", "1.1.0"))
         assertTrue(isNewerVersion("1.10.0", "1.9.0"))
