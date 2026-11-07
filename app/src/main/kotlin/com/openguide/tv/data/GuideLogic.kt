@@ -96,6 +96,21 @@ fun parseCrop(saved: String?): Pair<Int, Int> {
 
 const val MAX_CROP = 25
 
+/** One entry on the guide channel. */
+data class GuideRow(val number: Int, val name: String, val now: String, val nextAt: Long?, val next: String?)
+
+/** Only channels with something on: a list of "No listings" would be dull to sit and watch. */
+fun guideRows(
+    channels: List<Channel>,
+    numbers: Map<String, Int>,
+    airing: Map<String, Programme>,
+    upcoming: Map<String, Programme>,
+): List<GuideRow> = channels.mapNotNull { ch ->
+    val now = airing[ch.id] ?: return@mapNotNull null
+    val next = upcoming[ch.id]
+    GuideRow(numbers[ch.id] ?: 0, ch.name, now.title, next?.start, next?.title)
+}
+
 private val BREAK_FILLER = Regex("""ptv[-_]?\d*[-_]?ad[-_]?bumper""", RegexOption.IGNORE_CASE)
 
 /**

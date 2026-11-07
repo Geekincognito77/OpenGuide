@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.openguide.tv.data.Channel
+import com.openguide.tv.data.GUIDE_CHANNEL_ID
 import com.openguide.tv.data.Repo
 import com.openguide.tv.data.StreamInfo
 import com.openguide.tv.data.isBreakFiller
@@ -257,12 +258,28 @@ class TvPlayer(
     fun tune(ch: Channel, stream: StreamInfo? = null) {
         handler.removeCallbacks(retryAfterFailure)
         channel = ch
+        if (ch.id == GUIDE_CHANNEL_ID) {
+            playNothing(ch)
+            return
+        }
         val ordered = orderStreams(ch.streams, repo.prefs.goodStream(ch.id))
         queue = if (stream != null) listOf(stream) + (ordered - stream) else ordered
         attempt = -1
         everPlayed = false
         repo.prefs.lastChannel = ch.id
         next()
+    }
+
+    /** The guide channel has no stream, so it's "on" with the player idle. Not a failure, so never marked dead. */
+    private fun playNothing(ch: Channel) {
+        handler.removeCallbacks(watchdog)
+        onBreak = false
+        queue = emptyList()
+        attempt = -1
+        repo.prefs.lastChannel = ch.id
+        exo.stop()
+        exo.clearMediaItems()
+        state = TuneState.Idle
     }
 
     private fun next() {

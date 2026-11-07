@@ -37,6 +37,8 @@ import com.openguide.tv.data.CATEGORY_CRT
 import com.openguide.tv.data.CATEGORY_FAVORITES
 import com.openguide.tv.data.Channel
 import com.openguide.tv.data.CrtStretch
+import com.openguide.tv.data.GUIDE_CHANNEL
+import com.openguide.tv.data.GUIDE_CHANNEL_ID
 import com.openguide.tv.data.LANGUAGE_ALL
 import com.openguide.tv.data.MAX_CROP
 import com.openguide.tv.data.Listings
@@ -47,6 +49,7 @@ import com.openguide.tv.data.Repo
 import com.openguide.tv.data.Updater
 import com.openguide.tv.data.croppedAspect
 import com.openguide.tv.data.crtVideoSize
+import com.openguide.tv.data.guideRows
 import com.openguide.tv.data.uncroppedSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +92,8 @@ class MainActivity : Activity() {
     private lateinit var pipFrame: View
     private lateinit var crtNumber: TextView
     private lateinit var breakLabel: TextView
+    private lateinit var guideChannelView: GuideChannelView
+    private lateinit var staticView: StaticView
     private lateinit var subtitles: SubtitleView
     private lateinit var hero: LinearLayout
     private lateinit var guide: GuideView
@@ -167,13 +172,13 @@ class MainActivity : Activity() {
                 updateHero(ch, block)
                 updateStatusText()
             }
-            onSelect = { ch, _ -> tuneFullscreen(ch, repo.filtered(guideCategory)) }
+            onSelect = { ch, _ -> tuneFullscreen(ch, guideList()) }
             onPreview = { ch ->
-                surfList = repo.filtered(guideCategory)
+                surfList = guideList()
                 tune(ch)
             }
             onToggleFavorite = ::toggleFavorite
-            onOptions = { ch -> showChannelOptions(ch, repo.filtered(guideCategory)) }
+            onOptions = { ch -> showChannelOptions(ch, guideList()) }
         }
         shell.addView(buildTopBar(), LinearLayout.LayoutParams(MATCH, dp(32)).apply { bottomMargin = dp(6) })
         content = FrameLayout(this)
@@ -210,6 +215,12 @@ class MainActivity : Activity() {
             visibility = View.GONE
         }
         root.addView(videoStatus, FrameLayout.LayoutParams(0, 0))
+
+        guideChannelView = GuideChannelView(this)
+        root.addView(guideChannelView, FrameLayout.LayoutParams(MATCH, MATCH))
+        // Fills the whole tube, as snow does, so it stays out of the overscan margins below.
+        staticView = StaticView(this)
+        root.addView(staticView, FrameLayout.LayoutParams(MATCH, MATCH))
 
         // Separate from the video view, which can be larger than the screen when cropping.
         video.subtitleView?.visibility = View.GONE
@@ -303,7 +314,7 @@ class MainActivity : Activity() {
     /** Keeps everything but full-screen video inside the part of the picture the tube shows. */
     private fun applyOverscan() {
         // Not the picker: it's centred anyway, and its dimming should reach the screen's edges.
-        listOf<View>(shell, banner, loadingView, cropper, crtNumber, breakLabel, subtitles).forEach { v ->
+        listOf<View>(shell, banner, loadingView, cropper, crtNumber, breakLabel, subtitles, guideChannelView).forEach { v ->
             v.layoutParams = (v.layoutParams as FrameLayout.LayoutParams).apply {
                 setMargins(insetX, insetY, insetX, insetY)
             }
@@ -509,7 +520,7 @@ class MainActivity : Activity() {
             showSettings(focus = false)
             settings.focusCrt()
         } else {
-            repo.channel(repo.prefs.lastChannel)?.let { surfList = repo.filtered(guideCategory); tune(it) }
+            savedChannel()?.let { surfList = guideList(); tune(it) }
         }
 
         scope.launch {
@@ -557,12 +568,14 @@ class MainActivity : Activity() {
         repo.refreshListings(force = false)
         repo.checkSources(force = false)
         if (screen == Screen.BROWSER) refreshBrowserAiring()
+        refreshGuideChannel()
     }
 
     private fun onListingsChanged() {
         listings.clear()
         guide.refreshFocus()
         if (screen == Screen.BROWSER) refreshBrowserAiring()
+        refreshGuideChannel()
         updateStats()
     }
 
@@ -596,8 +609,21 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun reloadGuide() {
+    /** The guide's channels. An empty CRT list stays empty, so it can explain how to add to it. */
+    private fun guideList(): List<Channel> {
         val list = repo.filtered(guideCategory)
+        val withGuide = guideCategory == CATEGORY_ALL || (guideCategory == CATEGORY_CRT && list.isNotEmpty())
+        return if (Look.crt && prefs.guideChannel && withGuide) listOf(GUIDE_CHANNEL) + list else list
+    }
+
+    /** What was last on, which [Repo.channel] can't find if it was the guide channel. */
+    private fun savedChannel(): Channel? {
+        val id = prefs.lastChannel
+        return if (id == GUIDE_CHANNEL_ID) GUIDE_CHANNEL.takeIf { Look.crt && prefs.guideChannel } else repo.channel(id)
+    }
+
+    private fun reloadGuide() {
+        val list = guideList()
         guide.setChannels(list)
         categoryChip.text = (if (Look.crt) "" else "Showing: ") + categoryName(guideCategory) + "  ▾"
     }
@@ -623,6 +649,13 @@ class MainActivity : Activity() {
             return
         }
         heroChannel.text = "${repo.numbers[ch.id] ?: ""}  ${ch.name}"
+        if (ch.id == GUIDE_CHANNEL_ID) {
+            heroTitle.text = ch.name
+            heroTime.text = "What's on now and next, scrolling"
+            heroDesc.text = "Press OK to watch."
+            heroProgress.visibility = View.INVISIBLE
+            return
+        }
         val p = block?.programme
         if (p == null) {
             heroTitle.text = ch.name
@@ -665,6 +698,8 @@ class MainActivity : Activity() {
         }
         subtitles.visibility = if (target == Screen.FULLSCREEN) View.VISIBLE else View.GONE
         updateBreakLabel()
+        if (target != Screen.FULLSCREEN) staticView.cancel()
+        updateGuideChannel()
         placeVideo()
     }
 
@@ -722,7 +757,7 @@ class MainActivity : Activity() {
     }
 
     private fun resumeIfStopped() {
-        if (player?.channel == null) repo.channel(repo.prefs.lastChannel)?.let(::tune)
+        if (player?.channel == null) savedChannel()?.let(::tune)
     }
 
     private fun pickGuideCategory() {
@@ -870,7 +905,11 @@ class MainActivity : Activity() {
         val cur = p.channel
         if (cur != null && cur != ch) previousChannel = cur
         subtitles.setCues(emptyList())
+        if (Look.crt && prefs.channelStatic && screen == Screen.FULLSCREEN) staticView.start()
         p.tune(ch, stream)
+        // Nothing to wait for, so this is just the burst.
+        if (ch.id == GUIDE_CHANNEL_ID) staticView.finish()
+        updateGuideChannel()
         guide.tunedChannelId = ch.id
         updateStatusText()
         // Each channel has its own picture settings.
@@ -885,7 +924,26 @@ class MainActivity : Activity() {
         showBanner()
     }
 
+    private fun updateGuideChannel() {
+        val on = screen == Screen.FULLSCREEN && player?.channel?.id == GUIDE_CHANNEL_ID
+        guideChannelView.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) refreshGuideChannel()
+    }
+
+    private fun refreshGuideChannel() {
+        if (guideChannelView.visibility != View.VISIBLE) return
+        val channels = surfList.ifEmpty { guideList() }.filter { it.id != GUIDE_CHANNEL_ID }
+        scope.launch {
+            val rows = withContext(Dispatchers.IO) {
+                val now = System.currentTimeMillis()
+                guideRows(channels, repo.numbers, repo.db.airingNow(now), repo.db.startingNext(now, GUIDE_NEXT_WITHIN))
+            }
+            guideChannelView.setRows(rows)
+        }
+    }
+
     private fun onTuneState(s: TuneState) {
+        if (s is TuneState.Playing || s is TuneState.Failed) staticView.finish()
         applyVideoStatus()
         if (screen == Screen.FULLSCREEN) {
             updateBannerState()
@@ -970,7 +1028,7 @@ class MainActivity : Activity() {
     }
 
     private fun surf(delta: Int) {
-        val list = surfList.ifEmpty { repo.filtered(guideCategory) }
+        val list = surfList.ifEmpty { guideList() }
         if (list.isEmpty()) return
         val i = list.indexOf(player?.channel)
         var at = if (i < 0) 0 else Math.floorMod(i + delta, list.size)
@@ -986,6 +1044,7 @@ class MainActivity : Activity() {
     }
 
     private fun toggleFavorite(ch: Channel) {
+        if (ch.id == GUIDE_CHANNEL_ID) return
         val added = repo.toggleFavorite(ch.id)
         Toast.makeText(this, if (added) "Added ${ch.name} to favorites" else "Removed ${ch.name} from favorites", Toast.LENGTH_SHORT).show()
         if (guideCategory == CATEGORY_FAVORITES) reloadGuide() else guide.refreshFocus()
@@ -1001,6 +1060,10 @@ class MainActivity : Activity() {
 
     /** Everything a remote with only a D-pad, OK and Back can't reach through a dedicated button. */
     private fun showChannelOptions(ch: Channel, list: List<Channel>) {
+        if (ch.id == GUIDE_CHANNEL_ID) {
+            tuneFullscreen(ch, list) // it can't be previewed or added to a list, so there's nothing to choose
+            return
+        }
         val isFav = ch.id in repo.favorites.value
         val items = listOf(
             PickerItem("watch", "Watch"),
@@ -1029,8 +1092,16 @@ class MainActivity : Activity() {
 
     private fun showPlayerOptions() {
         val ch = player?.channel ?: return
-        val isFav = ch.id in repo.favorites.value
         val previous = previousChannel
+        if (ch.id == GUIDE_CHANNEL_ID) {
+            // No stream, so no picture or source settings, and it's on every list it can be on.
+            if (previous != null) {
+                val items = listOf(PickerItem("prev", "Last channel: ${previous.name}"))
+                picker.show(ch.name, items, null, focus = "prev") { goToPreviousChannel() }
+            }
+            return
+        }
+        val isFav = ch.id in repo.favorites.value
         val items = buildList {
             add(PickerItem("fav", if (isFav) "Remove from favorites" else "Add to favorites"))
             add(PickerItem("crt", crtListLabel(ch)))
@@ -1231,7 +1302,7 @@ class MainActivity : Activity() {
         super.onStart()
         // The Fire TV takes the decoder back when we leave, so playback restarts on return.
         if (uiReady && player == null && screen != Screen.SETTINGS) {
-            repo.channel(repo.prefs.lastChannel)?.let(::tune)
+            savedChannel()?.let(::tune)
         }
     }
 
@@ -1251,6 +1322,8 @@ class MainActivity : Activity() {
         player?.release()
         player = null
         video.player = null
+        staticView.cancel()
+        updateGuideChannel()
     }
 
     override fun onDestroy() {
@@ -1261,5 +1334,6 @@ class MainActivity : Activity() {
     private companion object {
         const val KEY_SETTINGS = "settings"
         const val MAX_OVERSCAN = 20
+        const val GUIDE_NEXT_WITHIN = 12 * 3_600_000L
     }
 }

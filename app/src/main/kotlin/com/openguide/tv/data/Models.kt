@@ -62,3 +62,7 @@ const val CATEGORY_ALL = "all"
 const val CATEGORY_FAVORITES = "favorites"
 const val CATEGORY_CRT = "crt"
 const val LANGUAGE_ALL = "all"
+
+const val GUIDE_CHANNEL_ID = "openguide.guide-channel"
+/** CRT mode's scrolling listings. It's added to lists by the UI and isn't in the catalog, having no stream. */
+val GUIDE_CHANNEL = Channel(GUIDE_CHANNEL_ID, "Guide Channel", "", emptyList(), null, emptyList(), emptyList())

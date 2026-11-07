@@ -161,6 +161,21 @@ class GuideLogicTest {
         assertEquals(1440 to 1080, crtVideoSize(1920, 1080, 16f / 9f, 4f / 3f, CrtStretch.FIT))
     }
 
+    @Test fun guideChannelListsWhatsOnInOrder() {
+        fun ch(id: String) = Channel(id, id.uppercase(), "US", emptyList(), null, emptyList(), emptyList())
+        fun show(title: String, start: Long = 0L) = Programme(start, start + 1, title, null, null, null, null)
+        val rows = guideRows(
+            listOf(ch("b"), ch("a"), ch("c")),
+            mapOf("a" to 7, "b" to 3, "c" to 9),
+            mapOf("a" to show("Film"), "b" to show("News")),
+            mapOf("a" to show("Later", 500L)),
+        )
+        assertEquals(
+            listOf(GuideRow(3, "B", "News", null, null), GuideRow(7, "A", "Film", 500L, "Later")),
+            rows,
+        )
+    }
+
     @Test fun recognisesPlutosBreakFillerByName() {
         // Real segment paths, including the different ways Pluto spells it.
         assertTrue(isBreakFiller("https://x.plutotv.net/410_Pluto_TV_OandO/clip/58e5377d_ptv_7424_ad_bumper_animation_dots_normal_10_1/1080pDRM/hls/hls_2400-00000.ts"))
