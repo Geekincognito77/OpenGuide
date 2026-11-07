@@ -1,10 +1,11 @@
 # OpenGuide
 
-A cable-style TV guide and channel browser for Fire TV and Android TV / Google TV, including Onn sticks. Channels and
-streams come from [iptv-org](https://github.com/iptv-org/iptv).
+A cable-style TV guide and channel browser for Fire TV, Android TV / Google TV (including Onn sticks) and
+LG webOS TVs. Channels and streams come from [iptv-org](https://github.com/iptv-org/iptv).
 
-Download the latest `OpenGuide.apk` from the [releases page](https://github.com/Zapiltar-E7/OpenGuide/releases/latest).
-Once it's installed, **Settings > Check for updates** fetches and installs new versions.
+Download the latest build from the [releases page](https://github.com/Zapiltar-E7/OpenGuide/releases/latest):
+`OpenGuide.apk` for Fire TV and Android TV, `OpenGuide.ipk` for LG. On Android, **Settings > Check for updates**
+fetches and installs new versions.
 
 ## Install on a Fire TV stick
 
@@ -39,6 +40,48 @@ The app appears in the Apps row. Menu names can vary a little between Android ve
 connection on port 5555 is refused, turn on **Wireless debugging** in Developer Options and use the
 `adb pair` address and code it shows.
 
+## Install on an LG webOS TV
+
+For webOS 4 and newer, which is most LG TVs from 2018 on. See [webOS differences](#webos-differences) for
+what's different from the Android app and how far this build has been tested.
+
+1. On the TV, install the **Developer Mode** app from the LG Content Store and sign in with a free
+   [LG developer account](https://webostv.developer.lge.com/).
+2. In the app, turn on **Dev Mode Status** and let the TV restart. Open the app again, turn on **Key Server**,
+   and note the IP address and passphrase it shows.
+3. On a PC on the same network, install LG's command line tools. They need [Node.js](https://nodejs.org/).
+
+```bash
+npm install -g @webos-tools/cli
+```
+
+4. Add the TV, replacing the address with yours, then fetch its key. Enter the passphrase when asked.
+
+```bash
+ares-setup-device -a tv -i "username=prisoner" -i "host=192.168.1.60" -i "port=9922"
+```
+
+```bash
+ares-novacom --getkey -d tv
+```
+
+5. Install and start the app:
+
+```bash
+ares-install -d tv OpenGuide.ipk
+```
+
+```bash
+ares-launch -d tv com.openguide.tv
+```
+
+The app then appears in the launcher. Developer Mode runs on a timer, and LG removes sideloaded apps when it
+runs out, so open the Developer Mode app now and then and use **Extend**. Installing again keeps your settings
+only if the app wasn't removed first.
+
+To update, install the new `OpenGuide.ipk` the same way. **Settings > Check for updates** tells you when there's
+a new version, but a webOS app can't install itself.
+
 ## Remote
 
 Everything works with just the D-pad, OK and Back, plus Channel Up and Down to change channel. If your
@@ -67,6 +110,10 @@ Remotes that have them can also use these shortcuts:
 | Guide | Rewind / Fast Forward | Page through channels |
 | Watching | Menu | Open options |
 | Watching | Rewind | Return to the last channel |
+
+On an LG remote, the red button does what Menu does above. Play and Pause work as Play/Pause does, and the Magic
+Remote's pointer works too: point and click to choose, hold the click for options, and turn the wheel to move
+through rows or change channel.
 
 ## CRT TVs
 
@@ -126,7 +173,30 @@ region. Feed URLs are in
 - Adult channels and channels on iptv-org's blocklist are left out, as are iptv-org streams that
   aren't linked to a known channel.
 
+## webOS differences
+
+The webOS app in [`webos/`](webos) is a packaged web app that shares the Android app's features and rules, with
+these differences:
+
+- **Testing so far.** It has been tested in a desktop browser against live data, with automated tests for the
+  guide logic and data handling, but **not yet on a real LG TV or the webOS emulator**. Playback through the TV's
+  own player, the remote's keys, and old engines are the parts most likely to need fixes.
+- **CRT settings.** CRT mode, the CRT list, picture and crop are all here. **Signal** and **Adjust overscan**
+  aren't, because they exist for adapters feeding a tube, and an LG TV has no video output to attach one to.
+- **Streams with their own headers.** A web app can't set the User-Agent or Referer on video, so streams that ask
+  for them often won't play. They're still tried, after the channel's other sources.
+- **Subtitles.** The TV's own player may not expose them, so turning them on switches that channel to
+  [hls.js](https://github.com/video-dev/hls.js). That needs the stream's server to allow cross-origin requests,
+  so fewer streams offer subtitles than on Android.
+- **Cross-origin requests.** LG's documentation doesn't settle whether packaged apps are subject to CORS, so the
+  app tests this when it starts. If they are:
+  - EPGShare listings aren't available, and neither are Plex and Roku, whose feeds redirect to a host that fails
+    the check. Pluto TV, Samsung TV Plus and EPG.PW still load.
+  - The background source check is skipped, so a channel is only hidden once tuning to it has failed.
+
 ## Build
+
+### Android
 
 Requires JDK 21 and the Android SDK (platform 36). Put `sdk.dir` in `local.properties`, then:
 
@@ -141,10 +211,34 @@ Release builds are signed with the local debug key (`~/.android/debug.keystore`)
 sideloaded. **Back that file up.** Android only installs an update signed with the same key, so without
 it every install would have to be removed and set up again.
 
+### webOS
+
+Requires Node.js 20 or newer. From the `webos` folder, this runs the tests and writes `OpenGuide.ipk`:
+
+```bash
+npm install
+```
+
+```bash
+npm test
+```
+
+```bash
+npm run package
+```
+
+To try the app in a desktop browser, run `npm run build` and `npm run serve`, then open
+http://localhost:8123. Arrow keys, Enter and Esc stand in for the remote. Browsers enforce CORS, so as described
+under [webOS differences](#webos-differences), some listings and streams won't load there.
+
+`webos/src/data/logic.js` is a port of `GuideLogic.kt`, and `webos/test/logic.test.js` of its tests, so a change to
+the rules in one app should be made in the other too.
+
 ## Releasing
 
-Raise `appVersion` in `app/build.gradle.kts`, then build and publish with a matching tag. The update
-check compares that tag with the installed version and downloads the release's `OpenGuide.apk`:
+Raise `appVersion` in `app/build.gradle.kts` and `version` in `webos/package.json`, then build and publish with a
+matching tag. The update checks compare that tag with the installed version, and each looks for its own file in the
+latest release, so attach both:
 
 ```bash
 ./gradlew testDebugUnitTest assembleRelease
@@ -155,5 +249,9 @@ cp app/build/outputs/apk/release/app-release.apk dist/OpenGuide.apk
 ```
 
 ```bash
-gh release create v1.2.0 dist/OpenGuide.apk --title "OpenGuide 1.2.0" --notes "What changed"
+cd webos && npm test && npm run package && cp OpenGuide.ipk ../dist/ && cd ..
+```
+
+```bash
+gh release create v1.2.0 dist/OpenGuide.apk dist/OpenGuide.ipk --title "OpenGuide 1.2.0" --notes "What changed"
 ```

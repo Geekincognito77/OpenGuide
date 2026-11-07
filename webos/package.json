@@ -1,0 +1,22 @@
+{
+  "name": "openguide-webos",
+  "version": "1.2.0",
+  "private": true,
+  "description": "OpenGuide for LG webOS TV",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "build": "node scripts/build.js",
+    "serve": "node scripts/serve.js",
+    "package": "npm run build && ares-package dist -o . --no-minify && node scripts/rename-ipk.js"
+  },
+  "dependencies": {
+    "hls.js": "1.5.20",
+    "pako": "2.1.0"
+  },
+  "devDependencies": {
+    "@webos-tools/cli": "^3.2.1",
+    "esbuild": "0.25.12"
+  }
+}

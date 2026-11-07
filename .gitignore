@@ -3,6 +3,7 @@
 build/
 local.properties
 *.apk
+*.ipk
 .idea/
 *.keystore
 *.jks
