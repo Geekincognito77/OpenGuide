@@ -19,13 +19,17 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsManifest
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.openguide.tv.data.Channel
+import com.openguide.tv.data.GUIDE_CHANNEL_ID
 import com.openguide.tv.data.Repo
 import com.openguide.tv.data.StreamInfo
+import com.openguide.tv.data.isBreakFiller
 import com.openguide.tv.data.orderStreams
 import okhttp3.OkHttpClient
 import java.util.Locale
+import java.util.TreeMap
 import java.util.concurrent.TimeUnit
 
 sealed class TuneState {
@@ -45,7 +49,12 @@ sealed class TuneState {
  * starts a fresh session. Moving on would also fail a channel outright if it has only one source.
  */
 @OptIn(UnstableApi::class)
-class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneState) -> Unit) {
+class TvPlayer(
+    ctx: Context,
+    private val repo: Repo,
+    private val onState: (TuneState) -> Unit,
+    private val onBreakChanged: () -> Unit,
+) {
 
     val exo: ExoPlayer = ExoPlayer.Builder(ctx, DefaultRenderersFactory(ctx).setEnableDecoderFallback(true))
         .setLoadControl(
@@ -73,6 +82,7 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
     private var lastProgressAt = 0L
     private var subtitlesOn = false
     private var triedSubtitleTrack = false
+    private val segmentIsFiller = TreeMap<Long, Boolean>()
     /** Hangs fail in seconds, so ExoPlayer's own retries happen before the watchdog steps in. */
     private val streamHttp: OkHttpClient = repo.http.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -83,6 +93,10 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
         private set
     var state: TuneState = TuneState.Idle
         private set(v) { field = v; onState(v) }
+
+    /** The picture is Pluto's logo clip, which can run for minutes and looks like a stuck stream. */
+    var onBreak = false
+        private set(v) { if (field != v) { field = v; onBreakChanged() } }
 
     private val watchdog = Runnable {
         Log.i(TAG, "Timed out on ${channel?.id}, attempt $attempt, played=$streamPlayed")
@@ -101,6 +115,7 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
         override fun run() {
             val now = SystemClock.uptimeMillis()
             if (exo.playbackState == Player.STATE_READY && exo.playWhenReady) {
+                onBreak = showingBreakFiller()
                 val frames = exo.videoDecoderCounters?.let {
                     it.ensureUpdated()
                     it.renderedOutputBufferCount
@@ -206,6 +221,20 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
             .build()
     }
 
+    /**
+     * Stitched playlists list only about 25 seconds and keep sliding, so what's on screen may already
+     * have dropped off the list. Segments are remembered by absolute time so they can still be looked up.
+     */
+    private fun showingBreakFiller(): Boolean {
+        val playlist = (exo.currentManifest as? HlsManifest)?.mediaPlaylist ?: return false
+        for (segment in playlist.segments) {
+            segmentIsFiller[playlist.startTimeUs + segment.relativeStartTimeUs] = isBreakFiller(segment.url)
+        }
+        val position = playlist.startTimeUs + exo.currentPosition * 1000
+        segmentIsFiller.headMap(position - SEGMENT_MEMORY_US).clear()
+        return segmentIsFiller.floorEntry(position)?.value ?: false
+    }
+
     private fun restartOrNext() {
         val ch = channel ?: return
         val s = queue.getOrNull(attempt)
@@ -229,6 +258,10 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
     fun tune(ch: Channel, stream: StreamInfo? = null) {
         handler.removeCallbacks(retryAfterFailure)
         channel = ch
+        if (ch.id == GUIDE_CHANNEL_ID) {
+            playNothing(ch)
+            return
+        }
         val ordered = orderStreams(ch.streams, repo.prefs.goodStream(ch.id))
         queue = if (stream != null) listOf(stream) + (ordered - stream) else ordered
         attempt = -1
@@ -237,8 +270,21 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
         next()
     }
 
+    /** The guide channel has no stream, so it's "on" with the player idle. Not a failure, so never marked dead. */
+    private fun playNothing(ch: Channel) {
+        handler.removeCallbacks(watchdog)
+        onBreak = false
+        queue = emptyList()
+        attempt = -1
+        repo.prefs.lastChannel = ch.id
+        exo.stop()
+        exo.clearMediaItems()
+        state = TuneState.Idle
+    }
+
     private fun next() {
         val ch = channel ?: return
+        onBreak = false
         attempt++
         streamPlayed = false
         restarts = 0
@@ -257,6 +303,8 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
     }
 
     private fun play(s: StreamInfo) {
+        onBreak = false
+        segmentIsFiller.clear()
         startedAt = SystemClock.uptimeMillis()
         lastProgressAt = startedAt
         applySubtitles()
@@ -287,6 +335,7 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
         handler.removeCallbacks(watchdog)
         handler.removeCallbacks(retryAfterFailure)
         channel = null
+        onBreak = false
         exo.stop()
         exo.clearMediaItems()
         state = TuneState.Idle
@@ -310,5 +359,6 @@ class TvPlayer(ctx: Context, private val repo: Repo, private val onState: (TuneS
         const val HEALTHY_AFTER = 60_000L
         const val MAX_RESTARTS = 3
         const val RETRY_DELAY = 15_000L
+        const val SEGMENT_MEMORY_US = 120_000_000L
     }
 }

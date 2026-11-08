@@ -3,7 +3,7 @@ plugins {
 }
 
 // The release tag on GitHub must match this, with a leading "v", for the in-app update check.
-val appVersion = providers.gradleProperty("appVersion").getOrElse("1.2.0")
+val appVersion = providers.gradleProperty("appVersion").getOrElse("1.3.0")
 val updateApi = providers.gradleProperty("updateApi")
     .getOrElse("https://api.github.com/repos/Zapiltar-E7/OpenGuide/releases/latest")
 

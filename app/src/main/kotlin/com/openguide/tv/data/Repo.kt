@@ -85,6 +85,13 @@ class Prefs(ctx: Context) {
         get() = p.getBoolean("crt_overscan_video", false)
         set(v) = p.edit().putBoolean("crt_overscan_video", v).apply()
 
+    var guideChannel: Boolean
+        get() = p.getBoolean("guide_channel", true)
+        set(v) = p.edit().putBoolean("guide_channel", v).apply()
+    var channelStatic: Boolean
+        get() = p.getBoolean("channel_static", true)
+        set(v) = p.edit().putBoolean("channel_static", v).apply()
+
     /** A channel uses the default picture mode until it's given its own. */
     fun channelStretch(channel: String): CrtStretch =
         CrtStretch.entries.firstOrNull { it.name == p.getString("picture_$channel", null) } ?: crtStretch
@@ -233,7 +240,7 @@ class Repo(ctx: Context) {
             .filter { matchesLanguage(it.languages, lang) }
             .sortedWith(compareBy<Channel> { it.id !in has }.thenBy { it.nameLower })
             .toList()
-        numbers = list.withIndex().associate { (i, ch) -> ch.id to i + 1 }
+        numbers = list.withIndex().associate { (i, ch) -> ch.id to i + 1 } + (GUIDE_CHANNEL_ID to 0)
         _lineup.value = list
     }
 

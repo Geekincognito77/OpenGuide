@@ -139,6 +139,15 @@ you change channel, or "NO SIGNAL" beside it if the channel isn't responding.
 **CRT list** is your own channel list, like Favorites. Hold OK on a channel to add it. In CRT mode the
 guide starts on it once it has channels, and you can switch lists from the guide's menu at the top.
 
+**Guide channel** is channel 0 in CRT mode: what's on now and next across your list, scrolling slowly
+up the screen like an old cable guide channel. It lists the channels with something on in whichever
+list you're watching from, so from the CRT list it shows just that list. Turn it off with
+**Settings > Guide channel**.
+
+**Static** fills the screen for a moment when you change channel in CRT mode, and stays until the new
+channel's picture is ready, for up to five seconds. Turn it off with **Settings > Static when changing
+channel**.
+
 ## Subtitles
 
 Press Right while watching to turn subtitles on or off. The choice is saved for each channel. Not every

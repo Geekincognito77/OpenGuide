@@ -53,6 +53,21 @@ class EpgDb(ctx: Context) : SQLiteOpenHelper(ctx, "epg.db", null, 1) {
         return out
     }
 
+    /** Each channel's next programme to start within [within] of now. */
+    fun startingNext(now: Long, within: Long): Map<String, Programme> {
+        val out = HashMap<String, Programme>()
+        readableDatabase.rawQuery(
+            "SELECT channel,start,stop,title FROM programmes WHERE start>? AND start<=? ORDER BY start DESC",
+            arrayOf(now.toString(), (now + within).toString()),
+        ).use { c ->
+            // Latest first, so the earliest is what's left in the map.
+            while (c.moveToNext()) {
+                out[c.getString(0)] = Programme(c.getLong(1), c.getLong(2), c.getString(3), null, null, null, null)
+            }
+        }
+        return out
+    }
+
     fun channelsWithListings(): Set<String> {
         val out = HashSet<String>()
         readableDatabase.rawQuery("SELECT DISTINCT channel FROM programmes", null).use { c ->
