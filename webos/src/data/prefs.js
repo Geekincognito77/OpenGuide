@@ -46,6 +46,8 @@ export class Prefs {
     field(this, 'crtMode', 'crt_mode', false);
     field(this, 'crtList', 'crt_list', []);
     field(this, 'crtStretch', 'crt_stretch', STRETCH.FIT);
+    field(this, 'guideChannel', 'guide_channel', true);
+    field(this, 'channelStatic', 'channel_static', true);
   }
 
   get regionOrWorld() {

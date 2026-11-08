@@ -99,6 +99,15 @@ test('regions get their feeds, and UK maps to ISO GB', () => {
   assert.ok(epgSourcesFor('ALL').every((s) => s.interleaved));
 });
 
+test('where CORS applies, feeds come from hosts that allow it', () => {
+  const sources = epgSourcesFor('US', false);
+  assert.ok(!sources.some((s) => s.key.indexOf('epgshare') === 0));
+  assert.ok(sources.filter((s) => s.key.indexOf('mjh-') === 0).every((s) => s.url.indexOf('https://raw.githubusercontent.com/') === 0));
+  assert.ok(sources.some((s) => s.key === 'epgpw-US'));
+  // The keys stay the same, so stored listings carry over either way.
+  assert.deepEqual(sources.map((s) => s.key), epgSourcesFor('US').map((s) => s.key).filter((k) => k.indexOf('epgshare') !== 0));
+});
+
 function fakeImport(status, etagBefore) {
   const saved = {};
   return {

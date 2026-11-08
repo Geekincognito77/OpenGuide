@@ -92,6 +92,70 @@ export function parseCrop(saved) {
   return [clamp(x), clamp(y)];
 }
 
+export const GUIDE_CHANNEL_ID = 'openguide.guide-channel';
+
+/** CRT mode's scrolling listings. It's added to lists by the UI and isn't in the catalog, having no stream. */
+export const GUIDE_CHANNEL = {
+  id: GUIDE_CHANNEL_ID,
+  name: 'Guide Channel',
+  nameLower: 'guide channel',
+  country: '',
+  categories: [],
+  logo: null,
+  streams: [],
+  languages: [],
+};
+
+/**
+ * One entry per channel on the guide channel, in list order. Only channels with something on: a list of
+ * "No listings" would be dull to sit and watch.
+ * @param airing Map of channel to what's on now; upcoming, to what starts next.
+ */
+export function guideRows(channels, numbers, airing, upcoming) {
+  const out = [];
+  for (const ch of channels) {
+    const now = airing.get(ch.id);
+    if (!now) continue;
+    const next = upcoming.get(ch.id);
+    out.push({
+      number: numbers.get(ch.id) || 0,
+      name: ch.name,
+      now: now.title,
+      nextAt: next ? next.start : null,
+      next: next ? next.title : null,
+    });
+  }
+  return out;
+}
+
+/**
+ * Each channel's next programme to start within `within` of now.
+ * @param times Map of channel to { rows: [[start, stop, title]] }, rows in time order.
+ */
+export function startingNext(times, now, within) {
+  const out = new Map();
+  times.forEach((rec, channel) => {
+    for (const r of rec.rows) {
+      if (r[0] > now + within) break;
+      if (r[0] > now) {
+        out.set(channel, { start: r[0], stop: r[1], title: r[2] });
+        break;
+      }
+    }
+  });
+  return out;
+}
+
+const BREAK_FILLER = /ptv[-_]?\d*[-_]?ad[-_]?bumper/i;
+
+/**
+ * Whether a segment is the logo clip Pluto repeats through an ad break it has no ads for. It's in the
+ * stream like any other video, so only its name tells it apart, as in "ptv_7424_ad_bumper_animation_dots".
+ */
+export function isBreakFiller(segmentUrl) {
+  return BREAK_FILLER.test(segmentUrl || '');
+}
+
 /** Compares dotted versions numerically, so 1.10 is newer than 1.9. A leading "v" is ignored. */
 export function isNewerVersion(remote, current) {
   const parts = (v) => v.trim().replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);

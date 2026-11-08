@@ -190,18 +190,23 @@ these differences:
 - **Testing so far.** It has been tested in a desktop browser against live data, with automated tests for the
   guide logic and data handling, but **not yet on a real LG TV or the webOS emulator**. Playback through the TV's
   own player, the remote's keys, and old engines are the parts most likely to need fixes.
-- **CRT settings.** CRT mode, the CRT list, picture and crop are all here. **Signal** and **Adjust overscan**
-  aren't, because they exist for adapters feeding a tube, and an LG TV has no video output to attach one to.
+- **CRT settings.** CRT mode, the CRT list, the guide channel, static, picture and crop are all here. **Signal**
+  and **Adjust overscan** aren't, because they exist for adapters feeding a tube, and an LG TV has no video output
+  to attach one to.
 - **Streams with their own headers.** A web app can't set the User-Agent or Referer on video, so streams that ask
   for them often won't play. They're still tried, after the channel's other sources.
 - **Subtitles.** The TV's own player may not expose them, so turning them on switches that channel to
   [hls.js](https://github.com/video-dev/hls.js). That needs the stream's server to allow cross-origin requests,
   so fewer streams offer subtitles than on Android.
+- **Pluto TV ad breaks.** The label for Pluto's logo screen goes by the names of the stream's segments, which the
+  TV's own player doesn't reveal, so Pluto channels play through hls.js when the TV allows cross-origin requests.
+  If it doesn't, they play as usual without the label.
 - **Cross-origin requests.** LG's documentation doesn't settle whether packaged apps are subject to CORS, so the
   app tests this when it starts. If they are:
-  - EPGShare listings aren't available, and neither are Plex and Roku, whose feeds redirect to a host that fails
-    the check. Pluto TV, Samsung TV Plus and EPG.PW still load.
+  - EPGShare listings aren't available. Pluto TV, Samsung TV Plus, Plex, Roku and EPG.PW still load, the first
+    four straight from where i.mjh.nz hosts them, since its redirect passes through a host that fails the check.
   - The background source check is skipped, so a channel is only hidden once tuning to it has failed.
+  - Pluto TV ad breaks aren't labelled.
 
 ## Build
 
@@ -240,13 +245,14 @@ To try the app in a desktop browser, run `npm run build` and `npm run serve`, th
 http://localhost:8123. Arrow keys, Enter and Esc stand in for the remote. Browsers enforce CORS, so as described
 under [webOS differences](#webos-differences), some listings and streams won't load there.
 
+Every feature goes into both apps, in the same release, apart from the differences listed above.
 `webos/src/data/logic.js` is a port of `GuideLogic.kt`, and `webos/test/logic.test.js` of its tests, so a change to
 the rules in one app should be made in the other too.
 
 ## Releasing
 
-Raise `appVersion` in `app/build.gradle.kts` and `version` in `webos/package.json`, then build and publish with a
-matching tag. The update checks compare that tag with the installed version, and each looks for its own file in the
+Both apps share a version number. Raise `appVersion` in `app/build.gradle.kts` and `version` in
+`webos/package.json` together, then build and publish with a matching tag. The update checks compare that tag with the installed version, and each looks for its own file in the
 latest release, so attach both:
 
 ```bash
@@ -262,5 +268,5 @@ cd webos && npm test && npm run package && cp OpenGuide.ipk ../dist/ && cd ..
 ```
 
 ```bash
-gh release create v1.2.0 dist/OpenGuide.apk dist/OpenGuide.ipk --title "OpenGuide 1.2.0" --notes "What changed"
+gh release create v1.3.0 dist/OpenGuide.apk dist/OpenGuide.ipk --title "OpenGuide 1.3.0" --notes "What changed"
 ```

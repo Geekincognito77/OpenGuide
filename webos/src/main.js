@@ -1,11 +1,12 @@
 import {
-  CATEGORY_ALL, CATEGORY_CRT, CATEGORY_FAVORITES, croppedAspect, crtVideoSize, LANGUAGE_ALL, MAX_CROP, REGION_WORLD, STRETCH,
-  STRETCH_LABEL, STRETCH_ORDER, streamLabel, uncroppedSize,
+  CATEGORY_ALL, CATEGORY_CRT, CATEGORY_FAVORITES, croppedAspect, crtVideoSize, GUIDE_CHANNEL, GUIDE_CHANNEL_ID, guideRows,
+  LANGUAGE_ALL, MAX_CROP, REGION_WORLD, startingNext, STRETCH, STRETCH_LABEL, STRETCH_ORDER, streamLabel, uncroppedSize,
 } from './data/logic.js';
 import { getJson } from './data/net.js';
 import { Listings, Repo } from './data/repo.js';
 import { latestIfNewer } from './data/updater.js';
 import { BrowserScreen, button } from './ui/browser.js';
+import { GuideChannelView, StaticView } from './ui/crt.js';
 import { add, clockDay, durationLeft, el, progressBar, setLogo, setProgress, show, stampOf, timeOf } from './ui/dom.js';
 import { Focus, KEY } from './ui/focus.js';
 import { GuideView } from './ui/guide.js';
@@ -17,6 +18,7 @@ import { SettingsScreen } from './ui/settings.js';
 
 const FRAME_W = 1920;
 const FRAME_H = 1080;
+const GUIDE_NEXT_WITHIN = 12 * 3600000;
 const SCREEN = { LOADING: 'loading', GUIDE: 'guide', BROWSER: 'browser', SETTINGS: 'settings', FULLSCREEN: 'fullscreen' };
 
 // What's left for the guide and the channel grid once the rest of each screen's layout is taken out.
@@ -75,13 +77,13 @@ class App {
       this.updateHero(ch, block);
       this.updateStatusText();
     };
-    this.guide.onSelect = (ch) => this.tuneFullscreen(ch, repo.filtered(this.guideCategory));
+    this.guide.onSelect = (ch) => this.tuneFullscreen(ch, this.guideList());
     this.guide.onPreview = (ch) => {
-      this.surfList = repo.filtered(this.guideCategory);
+      this.surfList = this.guideList();
       this.tune(ch);
     };
     this.guide.onToggleFavorite = (ch) => this.toggleFavorite(ch);
-    this.guide.onOptions = (ch) => this.showChannelOptions(ch, repo.filtered(this.guideCategory));
+    this.guide.onOptions = (ch) => this.showChannelOptions(ch, this.guideList());
     this.guideScreen = this.buildGuideScreen();
 
     this.browser = new BrowserScreen(repo, focus, gridHeight, {
@@ -117,6 +119,9 @@ class App {
     this.videoStatus = el('div', 'video-status', 'hidden');
     this.banner = this.buildBanner();
     this.crtNumber = el('div', 'crt-number', 'hidden');
+    this.breakLabel = el('div', 'break-label', 'hidden', 'Pluto ad break · show will resume');
+    this.guideChannelView = new GuideChannelView();
+    this.staticView = new StaticView();
     this.loadingText = el('div', 'loading-text');
     this.retryButton = button('retry', 'Try again', () => this.startLoading());
     this.loadingView = add(el('div', 'loading'), el('div', 'loading-brand', null, 'OpenGuide'), this.loadingText, this.retryButton);
@@ -124,12 +129,12 @@ class App {
     this.picker = new Picker(focus);
     this.cropper = el('div', 'cropper', 'hidden');
     this.toastEl = el('div', 'toast', 'hidden');
-    add(this.root, this.shell, this.pipFrame, this.video, this.videoStatus, this.banner, this.crtNumber,
-      this.loadingView, this.picker.root, this.cropper, this.toastEl);
+    add(this.root, this.shell, this.pipFrame, this.video, this.videoStatus, this.guideChannelView.root, this.staticView.root,
+      this.banner, this.crtNumber, this.breakLabel, this.loadingView, this.picker.root, this.cropper, this.toastEl);
 
     this.player = new TvPlayer(this.video, repo, (s) => this.onTuneState(s), () => {
       this.toast("Subtitles on, but this stream isn't offering any");
-    });
+    }, () => this.updateBreakLabel());
     const placed = () => { if (this.prefs.crtMode) this.placeVideo(); };
     this.video.addEventListener('loadedmetadata', placed);
     this.video.addEventListener('resize', placed);
@@ -216,9 +221,9 @@ class App {
     this.settings.refresh();
     this.showGuide(true);
     this.guide.selectChannel(this.prefs.lastChannel);
-    const last = repo.byId.get(this.prefs.lastChannel);
+    const last = this.savedChannel();
     if (last) {
-      this.surfList = repo.filtered(this.guideCategory);
+      this.surfList = this.guideList();
       this.tune(last);
     }
 
@@ -235,6 +240,7 @@ class App {
       this.listings.clear();
       this.guide.refreshFocus();
       if (this.screen === SCREEN.BROWSER) this.browser.renderGrid();
+      this.refreshGuideChannel();
       this.updateStats();
     });
     repo.on('status', () => {
@@ -257,6 +263,7 @@ class App {
     this.repo.refreshListings(false);
     this.repo.checkSources(false);
     if (this.screen === SCREEN.BROWSER) this.browser.renderGrid();
+    this.refreshGuideChannel();
   }
 
   updateStatusText() {
@@ -289,9 +296,24 @@ class App {
     );
   }
 
+  /** The guide's channels. An empty CRT list stays empty, so it can explain how to add to it. */
+  guideList() {
+    const list = this.repo.filtered(this.guideCategory);
+    const c = this.guideCategory;
+    const withGuide = c === CATEGORY_ALL || (c === CATEGORY_CRT && list.length > 0);
+    return this.prefs.crtMode && this.prefs.guideChannel && withGuide ? [GUIDE_CHANNEL].concat(list) : list;
+  }
+
+  /** What was last on, which the catalog can't find if it was the guide channel. */
+  savedChannel() {
+    const id = this.prefs.lastChannel;
+    if (id === GUIDE_CHANNEL_ID) return this.prefs.crtMode && this.prefs.guideChannel ? GUIDE_CHANNEL : null;
+    return this.repo.byId.get(id) || null;
+  }
+
   reloadGuide() {
     if (!this.repo.catalog) return;
-    this.guide.setChannels(this.repo.filtered(this.guideCategory));
+    this.guide.setChannels(this.guideList());
     this.categoryChip.firstChild.textContent = `${this.prefs.crtMode ? '' : 'Showing: '}${this.categoryName(this.guideCategory)}  ▾`;
   }
 
@@ -329,7 +351,15 @@ class App {
       progress.style.visibility = 'hidden';
       return;
     }
-    this.heroChannel.textContent = `${this.repo.numbers.get(ch.id) || ''}  ${ch.name}`;
+    const number = this.repo.numbers.get(ch.id);
+    this.heroChannel.textContent = `${number === undefined ? '' : number}  ${ch.name}`;
+    if (ch.id === GUIDE_CHANNEL_ID) {
+      this.heroTitle.textContent = ch.name;
+      this.heroTime.textContent = "What's on now and next, scrolling";
+      this.heroDesc.textContent = 'Press OK to watch.';
+      progress.style.visibility = 'hidden';
+      return;
+    }
     const p = block ? block.programme : null;
     if (!p) {
       this.heroTitle.textContent = ch.name;
@@ -367,6 +397,9 @@ class App {
     }
     if (full) this.focus.set(null);
     else this.hideBanner();
+    if (!full) this.staticView.cancel();
+    this.updateGuideChannel();
+    this.updateBreakLabel();
     this.updateStatusText();
     this.placeVideo();
     this.guide.layout();
@@ -403,7 +436,7 @@ class App {
 
   resumeIfStopped() {
     if (this.player.channel) return;
-    const last = this.repo.byId.get(this.prefs.lastChannel);
+    const last = this.savedChannel();
     if (last) this.tune(last);
   }
 
@@ -561,7 +594,11 @@ class App {
   tune(ch, stream) {
     const cur = this.player.channel;
     if (cur && cur !== ch) this.previousChannel = cur;
+    if (this.prefs.crtMode && this.prefs.channelStatic && this.screen === SCREEN.FULLSCREEN) this.staticView.start();
     this.player.tune(ch, stream);
+    // Nothing to wait for, so this is just the burst.
+    if (ch.id === GUIDE_CHANNEL_ID) this.staticView.finish();
+    this.updateGuideChannel();
     this.guide.tunedChannelId = ch.id;
     this.guide.invalidate();
     this.updateStatusText();
@@ -577,7 +614,29 @@ class App {
     this.showBanner();
   }
 
+  updateGuideChannel() {
+    const ch = this.player && this.player.channel;
+    const on = this.screen === SCREEN.FULLSCREEN && !!ch && ch.id === GUIDE_CHANNEL_ID;
+    this.guideChannelView.setVisible(on);
+    if (on) this.refreshGuideChannel();
+  }
+
+  refreshGuideChannel() {
+    if (!this.guideChannelView.visible) return;
+    const list = this.surfList.length ? this.surfList : this.guideList();
+    const channels = list.filter((ch) => ch.id !== GUIDE_CHANNEL_ID);
+    const { repo } = this;
+    repo.refreshAiring();
+    this.guideChannelView.setRows(guideRows(channels, repo.numbers, repo.airing,
+      startingNext(repo.times, Date.now(), GUIDE_NEXT_WITHIN)));
+  }
+
+  updateBreakLabel() {
+    show(this.breakLabel, this.screen === SCREEN.FULLSCREEN && !!this.player && this.player.onBreak);
+  }
+
   onTuneState(s) {
+    if (s.kind === TUNE.PLAYING || s.kind === TUNE.FAILED) this.staticView.finish();
     this.applyVideoStatus();
     if (this.screen === SCREEN.FULLSCREEN) {
       this.updateBannerState();
@@ -599,13 +658,13 @@ class App {
     const number = this.repo.numbers.get(ch.id);
     if (this.prefs.crtMode) {
       const failed = this.player.state.kind === TUNE.FAILED;
-      this.crtNumber.textContent = (number || '--') + (failed ? '  NO SIGNAL' : '');
+      this.crtNumber.textContent = (number === undefined ? '--' : number) + (failed ? '  NO SIGNAL' : '');
       show(this.crtNumber, true);
       if (!persist) this.bannerTimer = setTimeout(() => this.hideBanner(), 4000);
       return;
     }
     show(this.banner, true);
-    this.bannerChannel.textContent = `${number || ''}  ${ch.name}${this.repo.favorites.has(ch.id) ? '  ★' : ''}`;
+    this.bannerChannel.textContent = `${number === undefined ? '' : number}  ${ch.name}${this.repo.favorites.has(ch.id) ? '  ★' : ''}`;
     const keys = this.prefs.dpadChangesChannel ? 'Up/Down' : 'Channel +/-';
     this.bannerHint.textContent = `${keys}: change channel   ·   Left: last channel   ·   Right or hold OK: options   ·   Back: guide`;
     setLogo(this.bannerLogo, ch.logo);
@@ -646,7 +705,7 @@ class App {
   }
 
   surf(delta) {
-    const list = this.surfList.length ? this.surfList : this.repo.filtered(this.guideCategory);
+    const list = this.surfList.length ? this.surfList : this.guideList();
     if (!list.length) return;
     const size = list.length;
     const i = list.indexOf(this.player.channel);
@@ -669,6 +728,7 @@ class App {
   }
 
   toggleFavorite(ch) {
+    if (ch.id === GUIDE_CHANNEL_ID) return;
     const added = this.repo.toggleFavorite(ch.id);
     this.toast(added ? `Added ${ch.name} to favorites` : `Removed ${ch.name} from favorites`);
     if (this.guideCategory === CATEGORY_FAVORITES) this.reloadGuide();
@@ -690,6 +750,10 @@ class App {
   }
 
   showChannelOptions(ch, list) {
+    if (ch.id === GUIDE_CHANNEL_ID) {
+      this.tuneFullscreen(ch, list); // it can't be previewed or added to a list, so there's nothing to choose
+      return;
+    }
     const items = [
       { id: 'watch', label: 'Watch' },
       { id: 'preview', label: 'Preview in small window' },
@@ -712,6 +776,15 @@ class App {
   showPlayerOptions() {
     const ch = this.player.channel;
     if (!ch) return;
+    if (ch.id === GUIDE_CHANNEL_ID) {
+      // No stream, so no picture or source settings, and it's on every list it can be on.
+      const previous = this.previousChannel;
+      if (previous) {
+        this.picker.show(ch.name, [{ id: 'prev', label: `Last channel: ${previous.name}` }], null, 'prev',
+          () => this.goToPreviousChannel());
+      }
+      return;
+    }
     const items = [
       { id: 'fav', label: this.favoriteLabel(ch) },
       { id: 'crt', label: this.crtListLabel(ch) },
@@ -800,12 +873,14 @@ class App {
       this.focus.keyUp(e.keyCode);
     });
     // The Magic Remote's pointer, while watching: click for info, wheel to change channel.
-    this.video.addEventListener('click', () => {
-      if (this.screen === SCREEN.FULLSCREEN && !this.picker.isShowing) this.toggleBanner();
-    });
-    this.video.addEventListener('wheel', (e) => {
-      if (this.screen === SCREEN.FULLSCREEN && !this.picker.isShowing) this.surf(e.deltaY > 0 ? -1 : 1);
-    });
+    for (const surface of [this.video, this.guideChannelView.root]) {
+      surface.addEventListener('click', () => {
+        if (this.screen === SCREEN.FULLSCREEN && !this.picker.isShowing) this.toggleBanner();
+      });
+      surface.addEventListener('wheel', (e) => {
+        if (this.screen === SCREEN.FULLSCREEN && !this.picker.isShowing) this.surf(e.deltaY > 0 ? -1 : 1);
+      });
+    }
   }
 
   /** Key repeat isn't reported the same way by every remote, so this counts it. */

@@ -361,6 +361,77 @@ video::cue { font-size: 44px; }
   font-weight: bold;
 }
 
+/* Says a long logo screen is Pluto's ad break, so it doesn't look like a stuck channel. */
+#break-label {
+  position: absolute;
+  z-index: 5;
+  right: 24px;
+  top: 24px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 28px;
+}
+.crt #break-label { border-radius: 0; background: #000; color: #6cff6c; font-size: 36px; font-weight: bold; }
+
+/* ---- CRT guide channel and static ---- */
+
+#guide-channel {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--bg);
+  text-shadow: var(--shadow);
+}
+.gch-head {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 76px;
+  line-height: 76px;
+  background: var(--header);
+  font-size: 38px;
+  font-weight: bold;
+}
+.gch-title { text-align: center; color: var(--accent); }
+.gch-clock { position: absolute; right: 24px; top: 0; color: var(--text); }
+.gch-list { position: absolute; left: 0; top: 76px; width: 1920px; height: 1004px; overflow: hidden; }
+.gch-row {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 152px;
+  margin-top: 2px;
+  padding: 10px 24px 0;
+  box-sizing: border-box;
+  background: var(--panel);
+  box-shadow: var(--edge);
+}
+.gch-row.odd { background: var(--cell); }
+.gch-name { color: var(--accent); font-size: 36px; font-weight: bold; line-height: 46px; }
+.gch-now { color: var(--text); font-size: 33px; line-height: 46px; }
+.gch-next { color: var(--muted); font-size: 33px; line-height: 46px; }
+.gch-message { position: absolute; left: 0; top: 500px; width: 1920px; text-align: center; color: var(--muted); font-size: 33px; }
+
+#static {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
 /* ---- Overlays ---- */
 
 #loading {

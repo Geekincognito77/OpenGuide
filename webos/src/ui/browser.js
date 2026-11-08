@@ -172,7 +172,7 @@ export class BrowserScreen {
       if (!ch) return;
       const dead = repo.deadChannels.has(ch.id);
       c.root.className = `card${start + i === this.index && hasFocus ? ' current' : ''}${dead ? ' dead' : ''}`;
-      const number = repo.numbers.get(ch.id) || '';
+      const number = repo.numbers.has(ch.id) ? repo.numbers.get(ch.id) : '';
       c.name.textContent = `${repo.favorites.has(ch.id) ? '★ ' : ''}${number}  ${ch.name}`;
       setLogo(c.logo, ch.logo);
       const p = repo.airing.get(ch.id);

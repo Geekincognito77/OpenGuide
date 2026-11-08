@@ -37,12 +37,15 @@ export class SettingsScreen {
       this.refresh();
       actions.crtPictureChanged();
     });
+    this.crtGuideChannel = button(null, '', toggle('guideChannel', () => actions.listsChanged()));
+    this.crtStatic = button(null, '', toggle('channelStatic', () => {}));
+    this.crtRows = [this.crtStretch, this.crtGuideChannel, this.crtStatic];
     this.refreshNow = button(null, 'Refresh channels and listings now', () => repo.refreshAll());
     this.update = button(null, '', () => actions.checkForUpdate());
     this.stats = el('div', 'stats');
     this.credits = el('div', 'credits', null, CREDITS);
     add(this.root, this.region, this.language, this.onlyListed, this.hideDead, this.dpadSurf, this.crtMode,
-      this.crtStretch, this.refreshNow, this.update, this.stats, this.credits);
+      this.crtStretch, this.crtGuideChannel, this.crtStatic, this.refreshNow, this.update, this.stats, this.credits);
     // Lets the D-pad scroll down to the text below the last row.
     this.update.ogKey = (code) => {
       if (code === 40) this.root.scrollTop = this.root.scrollHeight;
@@ -61,7 +64,9 @@ export class SettingsScreen {
     this.dpadSurf.setText(`D-pad Up/Down change channel: ${onOff(prefs.dpadChangesChannel)}`);
     this.crtMode.setText(`CRT TV mode: ${onOff(prefs.crtMode)}`);
     this.crtStretch.setText(`Default picture: ${STRETCH_LABEL[prefs.crtStretch]}`);
-    show(this.crtStretch, prefs.crtMode);
+    this.crtGuideChannel.setText(`Guide channel (channel 0): ${onOff(prefs.guideChannel)}`);
+    this.crtStatic.setText(`Static when changing channel: ${onOff(prefs.channelStatic)}`);
+    for (const row of this.crtRows) show(row, prefs.crtMode);
   }
 
   /** @param text a status to show on the update row, or null for its normal label. */

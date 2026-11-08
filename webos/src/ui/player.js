@@ -1,4 +1,5 @@
-import { playbackOrder } from '../data/logic.js';
+import { GUIDE_CHANNEL_ID, isBreakFiller, playbackOrder } from '../data/logic.js';
+import { isCrossOriginOpen } from '../data/net.js';
 
 const CONNECT_TIMEOUT = 15000;
 const STALL_TIMEOUT = 25000;
@@ -29,6 +30,9 @@ function streamType(url) {
 
 const SOURCE_TYPE = { hls: 'application/x-mpegURL', dash: 'application/dash+xml' };
 
+/** Pluto's streams, whose segment names say when an ad break is showing only its logo. iptv-org links them through jmp2.uk. */
+const isPluto = (url) => /\/\/jmp2\.uk\/plu-|[/.]pluto\.tv\//i.test(url);
+
 let hlsLoading = null;
 
 /** hls.js stays out of the way until something needs it. */
@@ -56,15 +60,19 @@ function loadHls() {
  * segments that no longer exist, while reopening starts a fresh session.
  *
  * On webOS the TV's own player handles video: it's hardware accelerated and needs no CORS. hls.js runs
- * only where that player can't help, which is subtitles and desktop browsers, and it needs CORS, so a
- * stream that fails under it is given to the TV's player before moving on.
+ * only where that player can't help: subtitles, desktop browsers, and Pluto where CORS allows, since its
+ * ad breaks can only be spotted by segment name, which the TV's player doesn't reveal. hls.js needs CORS,
+ * so a stream that fails under it is given to the TV's player before moving on.
  */
 export class TvPlayer {
-  constructor(video, repo, onState, onSubtitlesMissing) {
+  constructor(video, repo, onState, onSubtitlesMissing, onBreakChanged) {
     this.video = video;
     this.repo = repo;
     this.onState = onState;
     this.onSubtitlesMissing = onSubtitlesMissing;
+    this.onBreakChanged = onBreakChanged;
+    /** The picture is Pluto's logo clip, which can run for minutes and looks like a stuck stream. */
+    this.onBreak = false;
     this.channel = null;
     this.state = { kind: TUNE.IDLE };
     this.queue = [];
@@ -96,6 +104,12 @@ export class TvPlayer {
   setState(next) {
     this.state = next;
     this.onState(next);
+  }
+
+  setBreak(on) {
+    if (this.onBreak === on) return;
+    this.onBreak = on;
+    this.onBreakChanged();
   }
 
   onPlaying() {
@@ -167,12 +181,26 @@ export class TvPlayer {
   tune(ch, stream) {
     clearTimeout(this.retryTimer);
     this.channel = ch;
+    if (ch.id === GUIDE_CHANNEL_ID) {
+      this.playNothing(ch);
+      return;
+    }
     const ordered = playbackOrder(ch.streams, this.repo.prefs.goodStream(ch.id));
     this.queue = stream ? [stream].concat(ordered.filter((s) => s !== stream)) : ordered;
     this.attempt = -1;
     this.everPlayed = false;
     this.repo.prefs.lastChannel = ch.id;
     this.next();
+  }
+
+  /** The guide channel has no stream, so it's "on" with the player idle. Not a failure, so never marked dead. */
+  playNothing(ch) {
+    clearTimeout(this.watchdog);
+    this.queue = [];
+    this.attempt = -1;
+    this.repo.prefs.lastChannel = ch.id;
+    this.reset();
+    this.setState({ kind: TUNE.IDLE });
   }
 
   next() {
@@ -210,12 +238,15 @@ export class TvPlayer {
     if (streamType(s.url) !== 'hls') return 'native';
     const mse = 'MediaSource' in window;
     if (this.subtitlesOn && mse) return 'hls';
+    // Pluto only allows its own site cross-origin, so this is only worth trying where CORS doesn't apply.
+    if (isPluto(s.url) && mse && isCrossOriginOpen()) return 'hls';
     return this.canPlayHlsNatively() || !mse ? 'native' : 'hls';
   }
 
   /** Empties the player, which webOS needs in order to give up its decoder before the next stream. */
   reset() {
     this.generation++;
+    this.setBreak(false);
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;
@@ -286,6 +317,10 @@ export class TvPlayer {
       }
     });
     hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => this.applySubtitles());
+    // Fires as each segment starts to play, so it follows the picture rather than the download.
+    hls.on(Hls.Events.FRAG_CHANGED, (_, data) => {
+      if (generation === this.generation) this.setBreak(isBreakFiller(data.frag && data.frag.url));
+    });
     hls.on(Hls.Events.MANIFEST_PARSED, () => this.start());
     hls.loadSource(s.url);
     hls.attachMedia(this.video);

@@ -9,13 +9,23 @@ const EPGSHARE = ('AE1 AL1 AR1 AT1 AU1 BA1 BB1 BE2 BG1 BR1 BR2 CA2 CH1 CL1 CO1 C
   'UY1 VN1 ZA1').split(' ');
 const EPGPW = new Set(['AU', 'BR', 'CA', 'CN', 'DE', 'FR', 'GB', 'HK', 'ID', 'IN', 'JP', 'MY', 'NZ', 'PH', 'RU', 'SG', 'TW', 'US', 'VN']);
 
-/** Public XMLTV feeds for a region. Earlier sources win when two cover the same channel. */
-export function epgSourcesFor(region) {
+/**
+ * Public XMLTV feeds for a region. Earlier sources win when two cover the same channel.
+ * @param crossOriginOpen false where CORS applies. i.mjh.nz's feeds are then fetched from where it hosts them,
+ *   as its redirect passes through a GitHub host that sends no CORS header, and EPGShare, which sends none,
+ *   is left out.
+ */
+export function epgSourcesFor(region, crossOriginOpen = true) {
   const out = MJH.map(([dir, name]) => ({
-    key: `mjh-${dir}`, name, url: `https://i.mjh.nz/${dir}/all.xml.gz`, interleaved: true,
+    key: `mjh-${dir}`,
+    name,
+    url: crossOriginOpen
+      ? `https://i.mjh.nz/${dir}/all.xml.gz`
+      : `https://raw.githubusercontent.com/matthuisman/i.mjh.nz/refs/heads/master/${dir}/all.xml.gz`,
+    interleaved: true,
   }));
   if (region === REGION_WORLD) return out;
-  for (const f of EPGSHARE) {
+  for (const f of crossOriginOpen ? EPGSHARE : []) {
     if (f.indexOf(region) === 0) {
       out.push({ key: `epgshare-${f}`, name: `EPGShare ${f}`, url: `https://epgshare01.online/epgshare01/epg_ripper_${f}.xml.gz`, interleaved: false });
     }

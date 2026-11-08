@@ -2,9 +2,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  buildBlocks, croppedAspect, crtVideoSize, correctLanguages, isNewerVersion, LANGUAGE_ALL, matchesLanguage, MAX_CROP,
-  normalizeName, orderStreams, parseCrop, parseXmltvTime, playbackOrder, probeVerdict, resolveXmlChannels, rowStep,
-  STRETCH, taggedLanguages, uncroppedSize,
+  buildBlocks, croppedAspect, crtVideoSize, correctLanguages, guideRows, isBreakFiller, isNewerVersion, LANGUAGE_ALL,
+  matchesLanguage, MAX_CROP, normalizeName, orderStreams, parseCrop, parseXmltvTime, playbackOrder, probeVerdict,
+  resolveXmlChannels, rowStep, startingNext, STRETCH, taggedLanguages, uncroppedSize,
 } from '../src/data/logic.js';
 
 const prog = (start, stop) => ({ start, stop, title: 'p' });
@@ -181,4 +181,40 @@ test('a saved crop is read safely', () => {
   assert.deepEqual(parseCrop('junk'), [0, 0]);
   assert.deepEqual(parseCrop('3'), [0, 0]);
   assert.deepEqual(parseCrop('99,-4'), [MAX_CROP, 0]);
+});
+
+test("the guide channel lists what's on, in list order", () => {
+  const ch = (id) => ({ id, name: id.toUpperCase() });
+  const show = (title, start = 0) => ({ start, stop: start + 1, title });
+  const rows = guideRows(
+    [ch('b'), ch('a'), ch('c')],
+    map({ a: 7, b: 3, c: 9 }),
+    map({ a: show('Film'), b: show('News') }),
+    map({ a: show('Later', 500) }),
+  );
+  assert.deepEqual(rows, [
+    { number: 3, name: 'B', now: 'News', nextAt: null, next: null },
+    { number: 7, name: 'A', now: 'Film', nextAt: 500, next: 'Later' },
+  ]);
+});
+
+test('what starts next is the first programme after now, within the window', () => {
+  const times = map({
+    a: { rows: [[0, 100, 'On'], [100, 200, 'Next'], [200, 300, 'After']] },
+    b: { rows: [[0, 100, 'On'], [5000, 6000, 'Too late']] },
+  });
+  const next = startingNext(times, 50, 1000);
+  assert.deepEqual(next.get('a'), { start: 100, stop: 200, title: 'Next' });
+  assert.equal(next.has('b'), false);
+});
+
+test("Pluto's break filler is recognised by name", () => {
+  // Real segment paths, including the different ways Pluto spells it.
+  assert.ok(isBreakFiller('https://x.plutotv.net/410_Pluto_TV_OandO/clip/58e5377d_ptv_7424_ad_bumper_animation_dots_normal_10_1/1080pDRM/hls/hls_2400-00000.ts'));
+  assert.ok(isBreakFiller('https://x.plutotv.net/701_pluto_tv_oando/clip/58e5397b_ptv-7424_ad_bumper_animation_dots_normal_30_1/1080pDRM/seg_1.ts'));
+  assert.ok(isBreakFiller('https://x.plutotv.net/443_pluto_tv_oando/clip/58e5371a_ptv-7424adbumperanimationdotsinverted30_30fps/1080pDRM/seg_1.ts'));
+  assert.ok(!isBreakFiller('https://x.plutotv.net/316_pluto/clip/61163aa1_walkertexasranger_141/720pDRM/hls/hls_600-00033.ts'));
+  assert.ok(!isBreakFiller('https://x.plutotv.net/v1/mp4/c(ts)/p(0_ad%2Fcreative%2F67eeff33_ad%2F720p%2Fvideo_600.mp4)/1.ts'));
+  // A show that merely has the word in its title.
+  assert.ok(!isBreakFiller('https://x.plutotv.net/1_pluto/clip/abc_Road_Bumper_Cars_S1E2/720p/hls/hls_600-00001.ts'));
 });

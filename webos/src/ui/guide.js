@@ -1,4 +1,4 @@
-import { buildBlocks, floorHalfHour, HALF_HOUR, rowStep } from '../data/logic.js';
+import { buildBlocks, floorHalfHour, GUIDE_CHANNEL_ID, HALF_HOUR, rowStep } from '../data/logic.js';
 import { add, dayLabel, el, setLogo, show, timeOf } from './dom.js';
 import { KEY } from './focus.js';
 
@@ -337,7 +337,8 @@ export class GuideView {
   renderRow(slot, ch, index, focusedBlock, now) {
     const dead = this.repo.deadChannels.has(ch.id);
     slot.root.className = `grow${index === this.row ? ' current' : ''}${dead ? ' dead' : ''}`;
-    slot.num.textContent = this.repo.numbers.get(ch.id) || 0;
+    const number = this.repo.numbers.get(ch.id);
+    slot.num.textContent = number === undefined ? '' : number;
     if (!this.crt) setLogo(slot.logo, ch.logo);
     slot.name.textContent = (this.repo.favorites.has(ch.id) ? '★ ' : '') + ch.name;
     show(slot.dot, ch.id === this.tunedChannelId);
@@ -347,14 +348,16 @@ export class GuideView {
     while (cells.firstChild) cells.removeChild(cells.firstChild);
     const viewEnd = this.viewStart + this.span;
     const loaded = this.listings.get(ch.id) !== null;
+    const empty = ch.id === GUIDE_CHANNEL_ID ? "What's on, scrolling" : (loaded ? 'No listings' : '…');
     for (const b of this.blocks(index)) {
       if (b.stop <= this.viewStart) continue;
       if (b.start >= viewEnd) break;
-      cells.appendChild(this.cell(b, loaded, focusedBlock, now));
+      cells.appendChild(this.cell(b, empty, focusedBlock, now));
     }
   }
 
-  cell(b, loaded, focusedBlock, now) {
+  /** @param empty what a block with no programme says. */
+  cell(b, empty, focusedBlock, now) {
     const isFocus = focusedBlock !== null && b.start === focusedBlock.start;
     const p = b.programme;
     const classes = ['gc'];
@@ -374,7 +377,7 @@ export class GuideView {
     e.style.left = `${left + 2}px`;
     e.style.width = `${Math.max(right - left - 4, 1)}px`;
     if (right - left < 44) return e;
-    add(e, el('div', null, this.crt ? 'gtitle' : 'gtitle ell', p ? p.title : (loaded ? 'No listings' : '…')));
+    add(e, el('div', null, this.crt ? 'gtitle' : 'gtitle ell', p ? p.title : empty));
     if (p) add(e, el('div', null, 'gsub ell', p.sub || `${timeOf(p.start)} – ${timeOf(p.stop)}`));
     return e;
   }

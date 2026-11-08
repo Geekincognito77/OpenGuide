@@ -2,7 +2,7 @@ import { downloadCatalog, epgIndexFor } from './catalog.js';
 import { Db } from './db.js';
 import { epgSourcesFor, importSource } from './epg.js';
 import {
-  CATEGORY_ALL, CATEGORY_CRT, CATEGORY_FAVORITES, LANGUAGE_ALL, matchesLanguage, probeVerdict, REGION_WORLD,
+  CATEGORY_ALL, CATEGORY_CRT, CATEGORY_FAVORITES, GUIDE_CHANNEL_ID, LANGUAGE_ALL, matchesLanguage, probeVerdict, REGION_WORLD,
 } from './logic.js';
 import { detectCrossOrigin, getBytes, getJson, isCrossOriginOpen, probe } from './net.js';
 import { Prefs } from './prefs.js';
@@ -139,6 +139,7 @@ export class Repo {
     // The catalog is already A to Z, so splitting it in two keeps each group in order.
     this.lineup = list.filter((ch) => this.times.has(ch.id)).concat(list.filter((ch) => !this.times.has(ch.id)));
     this.numbers = new Map(this.lineup.map((ch, i) => [ch.id, i + 1]));
+    this.numbers.set(GUIDE_CHANNEL_ID, 0);
     this.emit('lineup');
   }
 
@@ -335,7 +336,7 @@ export class Repo {
     if (!rows) return;
     // The whole region, not the lineup, so switching language doesn't need new listings.
     const index = epgIndexFor(rows, new Set(this.inRegion(region).map((ch) => ch.id)));
-    const sources = epgSourcesFor(region);
+    const sources = epgSourcesFor(region, isCrossOriginOpen());
     let anySucceeded = false;
     for (let i = 0; i < sources.length; i++) {
       if (region !== this.region) return; // the region changed, and it started its own update
